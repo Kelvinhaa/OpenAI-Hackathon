@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+python-dotenv
+anthropic
+pydantic
+psycopg[binary]
+slowapi
+redis
+alembic
+PyJWT>=2.8.0
+cryptography
+pytest
+pytest-asyncio
+httpx
