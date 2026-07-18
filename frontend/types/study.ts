@@ -10,6 +10,31 @@ export interface StudyRecommendation {
   tips: string[];
 }
 
+export type FsrsRating = 1 | 2 | 3 | 4;
+
+export type MasteryState = "new" | "needs_work" | "growing" | "mastered";
+
+export interface ConceptNodeResponse {
+  id: number;
+  key: string;
+  title: string;
+  explanation: string;
+  retrieval_prompt: string;
+  last_reviewed_at: string | null;
+  next_review_at: string | null;
+  review_count: number;
+  interval_days: number;
+  stability: number;
+  difficulty: number;
+  last_rating: FsrsRating | null;
+}
+
+export interface ConceptEdgeResponse {
+  id: number;
+  prerequisite_node_id: number;
+  dependent_node_id: number;
+}
+
 export interface StudyResponse {
   id: number;
   user_id: string;
@@ -24,6 +49,8 @@ export interface StudyResponse {
   review_count: number;
   interval_days: number;
   stability: number;
+  concepts: ConceptNodeResponse[];
+  edges: ConceptEdgeResponse[];
 }
 
 export interface PreviewResponse {
@@ -87,4 +114,31 @@ export interface StudyFormData {
   time: number;
   level: string;
   goal: string;
+}
+
+export interface RetrievalFeedbackRequest {
+  answer: string;
+}
+
+export interface RetrievalFeedbackResponse {
+  feedback: string;
+  suggested_rating: FsrsRating;
+  prerequisite_concept_id: number | null;
+}
+
+export interface ConceptReviewRequest {
+  rating: FsrsRating;
+  answer: string;
+}
+
+export interface ConceptReviewResponse {
+  id: number;
+  last_reviewed_at: string;
+  next_review_at: string;
+  review_count: number;
+  interval_days: number;
+  stability: number;
+  difficulty: number;
+  last_rating: FsrsRating;
+  mastery_state: MasteryState;
 }
