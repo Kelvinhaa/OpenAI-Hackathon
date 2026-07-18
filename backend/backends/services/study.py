@@ -1,18 +1,16 @@
-import json
 import math
 import os
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
-from anthropic import AsyncAnthropic
-from anthropic.types import TextBlock
+from openai import AsyncOpenAI
 from typing import Optional
 from backends.schemas.study import StudyRecommendation
 
 load_dotenv()
 
-client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
-# Curated, science-backed study techniques. Claude must pick technique titles
+# Curated, science-backed study techniques. The model must pick technique titles
 # verbatim from this list (see SYSTEM_PROMPT) instead of inventing new ones.
 TECHNIQUE_LIBRARY = [
     {"name": "Active Recall", "description": "Testing yourself on material without looking at notes, forcing retrieval from memory.", "best_for": "all-purpose"},
@@ -89,47 +87,32 @@ async def generate_recommendation(
 ) -> StudyRecommendation:
     goal_line = f"\n- Learning goal: {goal}" if goal else ""
 
-    user_message = f"""Create a study plan for:
-- Subject: {subject}
-- Level: {level}
-- Duration: {time} minutes{goal_line}
-
-Respond with JSON only."""
+    user_message = (
+        "Create a study plan for:\n"
+        f"- Subject: {subject}\n"
+        f"- Level: {level}\n"
+        f"- Duration: {time} minutes{goal_line}"
+    )
 
     try:
-        response = await client.messages.create(
-            model="claude-haiku-4-5",
-            system=[{
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            }],
-            messages=[{"role": "user", "content": user_message}],
-            max_tokens=800,
+        response = await client.responses.parse(
+            model="gpt-5.6",
+            instructions=SYSTEM_PROMPT,
+            input=user_message,
+            text_format=StudyRecommendation,
         )
 
-        content_block = response.content[0]
-        if isinstance(content_block, TextBlock):
-            raw = content_block.text.strip()
-            # Strip markdown code fences if Claude adds them despite instructions
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1]
-                raw = raw.rsplit("```", 1)[0]
-                raw = raw.strip()
-            data = json.loads(raw)
-            recommendation = StudyRecommendation(**data)
-            for t in recommendation.techniques:
-                if t.title not in _TECHNIQUE_NAMES:
-                    print(f"[study-service] Technique title off-library: {t.title!r}")
-            return recommendation
+        recommendation = response.output_parsed
+        if not isinstance(recommendation, StudyRecommendation):
+            raise ValueError("OpenAI response did not contain a study recommendation")
 
-        raise ValueError("Unexpected response format from Claude")
+        for technique in recommendation.techniques:
+            if technique.title not in _TECHNIQUE_NAMES:
+                print(f"[study-service] Technique title off-library: {technique.title!r}")
+        return recommendation
 
-    except (json.JSONDecodeError, ValueError, KeyError) as e:
-        print(f"[study-service] Parse error, using fallback: {e}")
-        return _fallback_recommendation(subject, time, level)
     except Exception as e:
-        print(f"[study-service] API error, using fallback: {e}")
+        print(f"[study-service] OpenAI error, using fallback: {e}")
         return _fallback_recommendation(subject, time, level)
 
 
