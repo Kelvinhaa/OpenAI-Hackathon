@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -29,7 +30,17 @@ class GeneratedConcept(BaseModel):
     explanation: str
     retrieval_prompt: str
 
-    @field_validator("key", "title", "explanation", "retrieval_prompt")
+    @field_validator("key")
+    @classmethod
+    def require_lowercase_kebab_case_key(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("concept key must not be blank")
+        if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", normalized) is None:
+            raise ValueError("concept key must be lowercase kebab-case")
+        return normalized
+
+    @field_validator("title", "explanation", "retrieval_prompt")
     @classmethod
     def require_non_blank_text(cls, value: str) -> str:
         normalized = value.strip()
@@ -90,7 +101,7 @@ class ConceptNodeResponse(BaseModel):
     interval_days: int
     stability: float
     difficulty: float
-    last_rating: Optional[int] = None
+    last_rating: Optional[int] = Field(default=None, ge=1, le=4)
 
 
 class ConceptEdgeResponse(BaseModel):

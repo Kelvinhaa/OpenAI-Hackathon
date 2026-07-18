@@ -35,10 +35,16 @@ class StudySession(Base):
     stability = Column(Float, nullable=False, server_default="0")
 
     concepts = relationship(
-        "ConceptNode", back_populates="study_session", cascade="all, delete-orphan"
+        "ConceptNode",
+        back_populates="study_session",
+        cascade="all, delete-orphan",
+        order_by="ConceptNode.id",
     )
     edges = relationship(
-        "ConceptEdge", back_populates="study_session", cascade="all, delete-orphan"
+        "ConceptEdge",
+        back_populates="study_session",
+        cascade="all, delete-orphan",
+        order_by="ConceptEdge.id",
     )
 
 

@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backends.database import Base
 from backends.models import ConceptEdge, ConceptNode, ConceptReviewEvent, StudySession
-from backends.schemas.study import GeneratedLearningExperience
+from backends.schemas.study import ConceptNodeResponse, GeneratedLearningExperience
 
 
 def _experience_payload() -> dict:
@@ -141,6 +141,38 @@ def test_generated_experience_rejects_blank_concept_fields(field):
 
     with pytest.raises(ValidationError, match="must not be blank"):
         GeneratedLearningExperience.model_validate(payload)
+
+
+@pytest.mark.parametrize("invalid_key", ["Cell Cycle", "cell_cycle", "cell--cycle"])
+def test_generated_experience_requires_lowercase_kebab_case_concept_keys(invalid_key):
+    payload = _experience_payload()
+    payload["concepts"][0]["key"] = invalid_key
+    payload["edges"][0]["prerequisite_key"] = invalid_key
+
+    with pytest.raises(ValidationError, match="lowercase kebab-case"):
+        GeneratedLearningExperience.model_validate(payload)
+
+
+@pytest.mark.parametrize("last_rating", [0, 5])
+def test_concept_node_response_rejects_ratings_outside_fsrs_range(last_rating):
+    with pytest.raises(ValidationError):
+        ConceptNodeResponse(
+            id=1,
+            key="mitosis",
+            title="Mitosis",
+            explanation="Nuclear division.",
+            retrieval_prompt="What does mitosis produce?",
+            review_count=0,
+            interval_days=1,
+            stability=0.0,
+            difficulty=0.0,
+            last_rating=last_rating,
+        )
+
+
+def test_study_session_relationships_order_concepts_and_edges_by_id():
+    assert StudySession.concepts.property.order_by[0].key == "id"
+    assert StudySession.edges.property.order_by[0].key == "id"
 
 
 @pytest.mark.parametrize("field", ["prerequisite_key", "dependent_key"])

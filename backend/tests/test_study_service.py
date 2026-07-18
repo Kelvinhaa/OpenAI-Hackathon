@@ -8,7 +8,7 @@ import pytest
 from openai import AsyncOpenAI
 from packaging.version import Version
 
-from backends.schemas.study import StudyRecommendation, Technique
+from backends.schemas.study import GeneratedLearningExperience, StudyRecommendation, Technique
 from backends.services import study
 
 
@@ -98,3 +98,94 @@ async def test_generate_recommendation_returns_fallback_for_unparsed_openai_outp
 
     assert result.summary == "Study plan for Linear algebra (45 minutes, beginner level)"
     assert result.techniques[0].duration_minutes == 45
+
+
+def _generated_learning_experience() -> GeneratedLearningExperience:
+    return GeneratedLearningExperience(
+        summary="A plan for Newton's laws.",
+        techniques=[],
+        tips=["Draw a free-body diagram before calculating."],
+        concepts=[
+            {
+                "key": "force",
+                "title": "Force",
+                "explanation": "A push or pull acting on an object.",
+                "retrieval_prompt": "What is a force?",
+            },
+            {
+                "key": "mass",
+                "title": "Mass",
+                "explanation": "A measure of inertia.",
+                "retrieval_prompt": "How does mass affect acceleration?",
+            },
+            {
+                "key": "acceleration",
+                "title": "Acceleration",
+                "explanation": "The rate of velocity change.",
+                "retrieval_prompt": "What does acceleration describe?",
+            },
+            {
+                "key": "newtons-second-law",
+                "title": "Newton's second law",
+                "explanation": "Force, mass, and acceleration are related by F = ma.",
+                "retrieval_prompt": "How do force, mass, and acceleration relate?",
+            },
+        ],
+        edges=[
+            {"prerequisite_key": "force", "dependent_key": "newtons-second-law"},
+            {"prerequisite_key": "mass", "dependent_key": "newtons-second-law"},
+            {"prerequisite_key": "acceleration", "dependent_key": "newtons-second-law"},
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_learning_experience_uses_openai_typed_output(monkeypatch):
+    expected = _generated_learning_experience()
+    mock_client = Mock()
+    mock_client.responses.parse = AsyncMock(
+        return_value=SimpleNamespace(output_parsed=expected)
+    )
+    monkeypatch.setattr(study, "client", mock_client)
+
+    result = await study.generate_learning_experience(
+        subject="Newton's laws", level="undergraduate", time=30, goal="solve force problems"
+    )
+
+    assert result == expected
+    mock_client.responses.parse.assert_awaited_once_with(
+        model="gpt-5.6",
+        instructions=study.LEARNING_MAP_SYSTEM_PROMPT,
+        input=(
+            "Create a complete study plan and learning map for:\n"
+            "- Subject: Newton's laws\n"
+            "- Level: undergraduate\n"
+            "- Duration: 30 minutes\n"
+            "- Learning goal: solve force problems"
+        ),
+        text_format=GeneratedLearningExperience,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "parse_result",
+    [
+        SimpleNamespace(output_parsed=None),
+        RuntimeError("provider unavailable"),
+    ],
+)
+async def test_generate_learning_experience_raises_for_failed_or_unparsed_output(
+    monkeypatch, parse_result
+):
+    mock_client = Mock()
+    if isinstance(parse_result, Exception):
+        mock_client.responses.parse = AsyncMock(side_effect=parse_result)
+    else:
+        mock_client.responses.parse = AsyncMock(return_value=parse_result)
+    monkeypatch.setattr(study, "client", mock_client)
+
+    with pytest.raises(study.LearningExperienceGenerationError):
+        await study.generate_learning_experience(
+            subject="Newton's laws", level="undergraduate", time=30
+        )
