@@ -1,13 +1,18 @@
 import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import os
+import subprocess
+import sys
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from backends.database import Base
-from backends.models import ConceptEdge, ConceptNode, StudySession
+from backends.models import ConceptEdge, ConceptNode, ConceptReviewEvent, StudySession
 from backends.schemas.study import GeneratedLearningExperience
 
 
@@ -60,6 +65,16 @@ def _study_session() -> StudySession:
     )
 
 
+def _sqlite_engine(database_path):
+    engine = create_engine(f"sqlite:///{database_path}")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    return engine
+
+
 def test_generated_experience_accepts_valid_unique_concepts_and_edges():
     experience = GeneratedLearningExperience.model_validate(_experience_payload())
 
@@ -79,6 +94,29 @@ def test_generated_experience_rejects_duplicate_concept_keys():
         GeneratedLearningExperience.model_validate(payload)
 
 
+@pytest.mark.parametrize("concept_count", [3, 7])
+def test_generated_experience_requires_between_four_and_six_concepts(concept_count):
+    payload = _experience_payload()
+    if concept_count == 3:
+        payload["concepts"] = payload["concepts"][:3]
+        payload["edges"] = payload["edges"][:1]
+    else:
+        payload["concepts"].extend(
+            [
+                {
+                    "key": f"extra-{index}",
+                    "title": f"Extra concept {index}",
+                    "explanation": "An additional concept for validation.",
+                    "retrieval_prompt": "What makes this concept additional?",
+                }
+                for index in range(3)
+            ]
+        )
+
+    with pytest.raises(ValidationError, match="between 4 and 6"):
+        GeneratedLearningExperience.model_validate(payload)
+
+
 def test_generated_experience_rejects_edges_to_missing_nodes():
     payload = _experience_payload()
     payload["edges"][0]["prerequisite_key"] = "missing"
@@ -87,7 +125,7 @@ def test_generated_experience_rejects_edges_to_missing_nodes():
         GeneratedLearningExperience.model_validate(payload)
 
 
-def test_generated_experience_rejects_self_referential_edges_and_blank_content():
+def test_generated_experience_rejects_self_referential_edges():
     self_edge_payload = _experience_payload()
     self_edge_payload["edges"][0] = {
         "prerequisite_key": "mitosis",
@@ -96,14 +134,27 @@ def test_generated_experience_rejects_self_referential_edges_and_blank_content()
     with pytest.raises(ValidationError, match="itself"):
         GeneratedLearningExperience.model_validate(self_edge_payload)
 
-    blank_content_payload = _experience_payload()
-    blank_content_payload["concepts"][0]["explanation"] = "   "
+
+@pytest.mark.parametrize("field", ["key", "title", "explanation", "retrieval_prompt"])
+def test_generated_experience_rejects_blank_concept_fields(field):
+    payload = _experience_payload()
+    payload["concepts"][0][field] = "   "
+
     with pytest.raises(ValidationError, match="must not be blank"):
-        GeneratedLearningExperience.model_validate(blank_content_payload)
+        GeneratedLearningExperience.model_validate(payload)
+
+
+@pytest.mark.parametrize("field", ["prerequisite_key", "dependent_key"])
+def test_generated_experience_rejects_blank_edge_keys(field):
+    payload = _experience_payload()
+    payload["edges"][0][field] = "   "
+
+    with pytest.raises(ValidationError, match="must not be blank"):
+        GeneratedLearningExperience.model_validate(payload)
 
 
 def test_concept_nodes_belong_to_one_study_session_and_keep_fsrs_state(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'study-models.db'}")
+    engine = _sqlite_engine(tmp_path / "study-models.db")
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     try:
@@ -124,8 +175,12 @@ def test_concept_nodes_belong_to_one_study_session_and_keep_fsrs_state(tmp_path)
         assert node.study_session_id == study_session.id
         assert study_session.concepts == [node]
         assert node.review_count == 0
+        assert node.interval_days == 1
         assert node.stability == 0
         assert node.difficulty == 0
+        assert node.last_reviewed_at is None
+        assert node.next_review_at is None
+        assert node.last_rating is None
     finally:
         session.close()
         Base.metadata.drop_all(engine)
@@ -133,7 +188,7 @@ def test_concept_nodes_belong_to_one_study_session_and_keep_fsrs_state(tmp_path)
 
 
 def test_concept_constraints_reject_duplicate_keys_and_self_edges(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'study-model-constraints.db'}")
+    engine = _sqlite_engine(tmp_path / "study-model-constraints.db")
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     try:
@@ -174,3 +229,129 @@ def test_concept_constraints_reject_duplicate_keys_and_self_edges(tmp_path):
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+def test_concept_edges_cannot_cross_study_session_boundaries(tmp_path):
+    engine = _sqlite_engine(tmp_path / "study-model-ownership.db")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        first_study_session = _study_session()
+        second_study_session = _study_session()
+        session.add_all([first_study_session, second_study_session])
+        session.flush()
+        first_node = ConceptNode(
+            study_session_id=first_study_session.id,
+            key="cell-cycle",
+            title="Cell cycle",
+            explanation="The stages a cell follows before division.",
+            retrieval_prompt="What are the cell-cycle stages?",
+        )
+        second_node = ConceptNode(
+            study_session_id=second_study_session.id,
+            key="mitosis",
+            title="Mitosis",
+            explanation="Nuclear division creates matching nuclei.",
+            retrieval_prompt="What does mitosis produce?",
+        )
+        session.add_all([first_node, second_node])
+        session.commit()
+
+        cross_session_edge = ConceptEdge(
+            study_session_id=first_study_session.id,
+            prerequisite_node_id=first_node.id,
+            dependent_node_id=second_node.id,
+        )
+        session.add(cross_session_edge)
+        with pytest.raises(IntegrityError):
+            session.commit()
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_review_event_attaches_to_its_concept_and_persists_fsrs_state(tmp_path):
+    engine = _sqlite_engine(tmp_path / "study-model-reviews.db")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        study_session = _study_session()
+        reviewed_at = datetime.now(timezone.utc)
+        node = ConceptNode(
+            study_session=study_session,
+            key="mitosis",
+            title="Mitosis",
+            explanation="Nuclear division creates matching nuclei.",
+            retrieval_prompt="What does mitosis produce?",
+            last_reviewed_at=reviewed_at,
+            next_review_at=reviewed_at + timedelta(days=4),
+            review_count=2,
+            interval_days=4,
+            stability=3.5,
+            difficulty=4.2,
+            last_rating=3,
+        )
+        review_event = ConceptReviewEvent(rating=3, answer="It creates matching nuclei.")
+        node.review_events.append(review_event)
+        session.add(study_session)
+        session.commit()
+
+        assert review_event.concept_node is node
+        assert node.review_events == [review_event]
+        assert review_event.concept_node.study_session is study_session
+        assert node.last_reviewed_at == reviewed_at.replace(tzinfo=None)
+        assert node.next_review_at == (reviewed_at + timedelta(days=4)).replace(
+            tzinfo=None
+        )
+        assert node.review_count == 2
+        assert node.interval_days == 4
+        assert node.stability == 3.5
+        assert node.difficulty == 4.2
+        assert node.last_rating == 3
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_concept_review_events_reject_ratings_outside_fsrs_range(tmp_path):
+    engine = _sqlite_engine(tmp_path / "study-model-review-ratings.db")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        study_session = _study_session()
+        node = ConceptNode(
+            study_session=study_session,
+            key="mitosis",
+            title="Mitosis",
+            explanation="Nuclear division creates matching nuclei.",
+            retrieval_prompt="What does mitosis produce?",
+        )
+        session.add(node)
+        session.commit()
+
+        session.add(ConceptReviewEvent(concept_node_id=node.id, rating=0))
+        with pytest.raises(IntegrityError):
+            session.commit()
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_alembic_migration_chain_reaches_learning_map_head(tmp_path):
+    database_path = tmp_path / "migration-chain.db"
+    backend_path = Path(__file__).resolve().parents[1]
+    environment = os.environ | {"DATABASE_URL": f"sqlite:///{database_path}"}
+
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=backend_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr

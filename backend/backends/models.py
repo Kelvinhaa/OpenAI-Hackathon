@@ -4,6 +4,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     JSON,
     String,
@@ -45,6 +46,7 @@ class ConceptNode(Base):
     __tablename__ = "concept_nodes"
     __table_args__ = (
         UniqueConstraint("study_session_id", "key", name="uq_concept_nodes_session_key"),
+        UniqueConstraint("study_session_id", "id", name="uq_concept_nodes_session_id"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -86,18 +88,24 @@ class ConceptEdge(Base):
             "prerequisite_node_id <> dependent_node_id",
             name="ck_concept_edges_not_self_referential",
         ),
+        ForeignKeyConstraint(
+            ["study_session_id", "prerequisite_node_id"],
+            ["concept_nodes.study_session_id", "concept_nodes.id"],
+            name="fk_concept_edges_prerequisite_node_session",
+        ),
+        ForeignKeyConstraint(
+            ["study_session_id", "dependent_node_id"],
+            ["concept_nodes.study_session_id", "concept_nodes.id"],
+            name="fk_concept_edges_dependent_node_session",
+        ),
     )
 
     id = Column(Integer, primary_key=True)
     study_session_id = Column(
         Integer, ForeignKey("study_sessions.id"), nullable=False, index=True
     )
-    prerequisite_node_id = Column(
-        Integer, ForeignKey("concept_nodes.id"), nullable=False, index=True
-    )
-    dependent_node_id = Column(
-        Integer, ForeignKey("concept_nodes.id"), nullable=False, index=True
-    )
+    prerequisite_node_id = Column(Integer, nullable=False, index=True)
+    dependent_node_id = Column(Integer, nullable=False, index=True)
 
     study_session = relationship("StudySession", back_populates="edges")
     prerequisite_node = relationship(
@@ -114,6 +122,9 @@ class ConceptEdge(Base):
 
 class ConceptReviewEvent(Base):
     __tablename__ = "concept_review_events"
+    __table_args__ = (
+        CheckConstraint("rating >= 1 AND rating <= 4", name="ck_concept_review_events_rating"),
+    )
 
     id = Column(Integer, primary_key=True)
     concept_node_id = Column(

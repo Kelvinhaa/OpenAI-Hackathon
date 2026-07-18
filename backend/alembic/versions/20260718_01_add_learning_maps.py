@@ -36,6 +36,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["study_session_id"], ["study_sessions.id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("study_session_id", "key", name="uq_concept_nodes_session_key"),
+        sa.UniqueConstraint("study_session_id", "id", name="uq_concept_nodes_session_id"),
     )
     op.create_index(
         op.f("ix_concept_nodes_study_session_id"),
@@ -60,8 +61,16 @@ def upgrade() -> None:
             "prerequisite_node_id <> dependent_node_id",
             name="ck_concept_edges_not_self_referential",
         ),
-        sa.ForeignKeyConstraint(["dependent_node_id"], ["concept_nodes.id"]),
-        sa.ForeignKeyConstraint(["prerequisite_node_id"], ["concept_nodes.id"]),
+        sa.ForeignKeyConstraint(
+            ["study_session_id", "dependent_node_id"],
+            ["concept_nodes.study_session_id", "concept_nodes.id"],
+            name="fk_concept_edges_dependent_node_session",
+        ),
+        sa.ForeignKeyConstraint(
+            ["study_session_id", "prerequisite_node_id"],
+            ["concept_nodes.study_session_id", "concept_nodes.id"],
+            name="fk_concept_edges_prerequisite_node_session",
+        ),
         sa.ForeignKeyConstraint(["study_session_id"], ["study_sessions.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -97,6 +106,9 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(["concept_node_id"], ["concept_nodes.id"]),
+        sa.CheckConstraint(
+            "rating >= 1 AND rating <= 4", name="ck_concept_review_events_rating"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
