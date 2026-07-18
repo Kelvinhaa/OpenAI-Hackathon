@@ -6,7 +6,7 @@ from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
 from backends.database import get_db
 from backends.dependencies import limiter
-from backends.models import StudySession
+from backends.models import ConceptEdge, ConceptNode, StudySession
 from backends.schemas.study import (
     StudyRequest, StudyResponse, PreviewResponse,
     ReviewRequest, ReviewResponse,
@@ -15,7 +15,8 @@ from backends.schemas.study import (
     StudyRecommendation,
 )
 from backends.services.study import (
-    generate_recommendation, apply_fsrs,
+    LearningExperienceGenerationError, apply_fsrs, generate_learning_experience,
+    generate_recommendation,
     retrievability_now, predict_review_outcomes,
 )
 from backends.auth import get_current_user_id
@@ -42,30 +43,98 @@ async def create_study(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    recommendation = await generate_recommendation(
-        subject=payload.subject,
-        level=payload.level,
-        time=payload.time,
-        goal=payload.goal,
-    )
+    try:
+        experience = await generate_learning_experience(
+            subject=payload.subject,
+            level=payload.level,
+            time=payload.time,
+            goal=payload.goal,
+        )
+    except LearningExperienceGenerationError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Learning map generation is temporarily unavailable. Please try again.",
+        )
 
     try:
         parsed_user_id = uuid.UUID(user_id)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user identity in token")
 
-    session = StudySession(
-        user_id=parsed_user_id,
-        time=payload.time,
-        subject=payload.subject,
-        level=payload.level,
-        goal=payload.goal,
-        recommendation=recommendation.model_dump(),
+    recommendation = StudyRecommendation(
+        summary=experience.summary,
+        techniques=experience.techniques,
+        tips=experience.tips,
     )
-    db.add(session)
-    db.commit()
+    try:
+        session = StudySession(
+            user_id=parsed_user_id,
+            time=payload.time,
+            subject=payload.subject,
+            level=payload.level,
+            goal=payload.goal,
+            recommendation=recommendation.model_dump(),
+        )
+        db.add(session)
+        db.flush()
+
+        nodes_by_key = {}
+        for concept in experience.concepts:
+            node = ConceptNode(
+                study_session_id=session.id,
+                key=concept.key,
+                title=concept.title,
+                explanation=concept.explanation,
+                retrieval_prompt=concept.retrieval_prompt,
+            )
+            db.add(node)
+            nodes_by_key[concept.key] = node
+        db.flush()
+
+        for edge in experience.edges:
+            db.add(
+                ConceptEdge(
+                    study_session_id=session.id,
+                    prerequisite_node_id=nodes_by_key[edge.prerequisite_key].id,
+                    dependent_node_id=nodes_by_key[edge.dependent_key].id,
+                )
+            )
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
     db.refresh(session)
-    return session
+    concepts = (
+        db.query(ConceptNode)
+        .filter(ConceptNode.study_session_id == session.id)
+        .order_by(ConceptNode.id)
+        .all()
+    )
+    edges = (
+        db.query(ConceptEdge)
+        .filter(ConceptEdge.study_session_id == session.id)
+        .order_by(ConceptEdge.id)
+        .all()
+    )
+    return StudyResponse(
+        id=session.id,
+        user_id=session.user_id,
+        time=session.time,
+        subject=session.subject,
+        level=session.level,
+        goal=session.goal,
+        recommendation=recommendation,
+        created_at=session.created_at,
+        last_reviewed_at=session.last_reviewed_at,
+        next_review_at=session.next_review_at,
+        review_count=session.review_count,
+        interval_days=session.interval_days,
+        stability=session.stability,
+        concepts=concepts,
+        edges=edges,
+    )
 
 
 @router.post("/preview", response_model=PreviewResponse)

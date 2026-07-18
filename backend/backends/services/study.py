@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from openai import AsyncOpenAI
 from typing import Optional
-from backends.schemas.study import StudyRecommendation
+from backends.schemas.study import GeneratedLearningExperience, StudyRecommendation
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
@@ -60,6 +60,25 @@ Rules:
 - Tailor everything to the specific subject matter, not generic study advice
 - For the summary, write as if you're briefing a student before a session -- direct, confident, no hedging"""
 
+LEARNING_MAP_SYSTEM_PROMPT = f"""You are an expert study coach who creates practical, specific study plans and learning maps.
+Create a subject-specific study recommendation and a prerequisite learning map for the requested learner.
+
+Choose technique titles verbatim from this curated, science-backed list:
+{_TECHNIQUE_LIBRARY_BLOCK}
+
+Rules:
+- Provide 2-4 techniques whose duration_minutes sum exactly to the requested duration.
+- Make all summaries, technique descriptions, tips, concept explanations, and retrieval prompts specific to the subject and learner level.
+- Include 4-6 concepts with unique, stable lowercase kebab-case keys.
+- Every concept needs a concise explanation and an answerable retrieval prompt.
+- Edges must point from a prerequisite concept key to a dependent concept key. Do not create self-edges or reference concepts that are not included.
+- Include 2-4 actionable tips.
+- Write directly and confidently for the learner."""
+
+
+class LearningExperienceGenerationError(RuntimeError):
+    """Raised when a complete study plan and learning map cannot be generated."""
+
 
 def _fallback_recommendation(subject: str, time: int, level: str) -> StudyRecommendation:
     return StudyRecommendation(
@@ -111,6 +130,34 @@ async def generate_recommendation(
     except Exception as e:
         print(f"[study-service] OpenAI error, using fallback: {e}")
         return _fallback_recommendation(subject, time, level)
+
+
+async def generate_learning_experience(
+    subject: str, level: str, time: int, goal: Optional[str] = None
+) -> GeneratedLearningExperience:
+    goal_line = f"\n- Learning goal: {goal}" if goal else ""
+    user_message = (
+        "Create a complete study plan and learning map for:\n"
+        f"- Subject: {subject}\n"
+        f"- Level: {level}\n"
+        f"- Duration: {time} minutes{goal_line}"
+    )
+
+    try:
+        response = await client.responses.parse(
+            model="gpt-5.6",
+            instructions=LEARNING_MAP_SYSTEM_PROMPT,
+            input=user_message,
+            text_format=GeneratedLearningExperience,
+        )
+        experience = response.output_parsed
+    except Exception as exc:
+        raise LearningExperienceGenerationError() from exc
+
+    if not isinstance(experience, GeneratedLearningExperience):
+        raise LearningExperienceGenerationError()
+
+    return experience
 
 
 # ---------------------------------------------------------------------------

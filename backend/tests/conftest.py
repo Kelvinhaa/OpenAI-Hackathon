@@ -5,6 +5,7 @@ import os
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["SUPABASE_URL"] = "http://supabase.test"
 os.environ["OPENAI_API_KEY"] = "test-key"
+os.environ["REDIS_URL"] = "memory://"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +20,7 @@ TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
 @pytest.fixture
-def client(tmp_path):
+def testing_session_factory(tmp_path):
     engine = create_engine(
         f"sqlite:///{tmp_path / 'mindmappr-test.db'}",
         connect_args={"check_same_thread": False},
@@ -27,8 +28,25 @@ def client(tmp_path):
     testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base.metadata.create_all(bind=engine)
 
+    yield testing_session_local
+
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+@pytest.fixture
+def db_session(testing_session_factory):
+    db = testing_session_factory()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@pytest.fixture
+def client(testing_session_factory):
     def override_get_db():
-        db = testing_session_local()
+        db = testing_session_factory()
         try:
             yield db
         finally:
@@ -41,5 +59,3 @@ def client(tmp_path):
         yield test_client
 
     app.dependency_overrides.clear()
-    Base.metadata.drop_all(bind=engine)
-    engine.dispose()

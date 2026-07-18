@@ -76,6 +76,31 @@ class GeneratedLearningExperience(StudyRecommendation):
         return self
 
 
+class ConceptNodeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    key: str
+    title: str
+    explanation: str
+    retrieval_prompt: str
+    last_reviewed_at: Optional[datetime] = None
+    next_review_at: Optional[datetime] = None
+    review_count: int
+    interval_days: int
+    stability: float
+    difficulty: float
+    last_rating: Optional[int] = None
+
+
+class ConceptEdgeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    prerequisite_node_id: int
+    dependent_node_id: int
+
+
 class StudyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -92,6 +117,8 @@ class StudyResponse(BaseModel):
     review_count: int = 0
     interval_days: int = 1
     stability: float = 0.0
+    concepts: List[ConceptNodeResponse] = Field(default_factory=list)
+    edges: List[ConceptEdgeResponse] = Field(default_factory=list)
 
 
 class PreviewResponse(BaseModel):
