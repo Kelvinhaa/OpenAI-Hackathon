@@ -1,11 +1,10 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import os
-import subprocess
-import sys
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from pydantic import ValidationError
 from sqlalchemy import create_engine, event
 from sqlalchemy.exc import IntegrityError
@@ -340,18 +339,12 @@ def test_concept_review_events_reject_ratings_outside_fsrs_range(tmp_path):
         engine.dispose()
 
 
-def test_alembic_migration_chain_reaches_learning_map_head(tmp_path):
+def test_alembic_migration_chain_reaches_learning_map_head(tmp_path, monkeypatch):
     database_path = tmp_path / "migration-chain.db"
     backend_path = Path(__file__).resolve().parents[1]
-    environment = os.environ | {"DATABASE_URL": f"sqlite:///{database_path}"}
+    database_url = f"sqlite:///{database_path}"
+    config = Config(str(backend_path / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
 
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
-        cwd=backend_path,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
+    command.upgrade(config, "head")
