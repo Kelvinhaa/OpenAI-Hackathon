@@ -1,12 +1,9 @@
 import math
 import os
 from datetime import datetime, timedelta, timezone
-from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from typing import Optional
 from backends.schemas.study import StudyRecommendation
-
-load_dotenv()
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 

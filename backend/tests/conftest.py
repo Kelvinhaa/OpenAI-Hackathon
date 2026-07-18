@@ -4,7 +4,7 @@ import os
 # developer's local database or Supabase configuration.
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["SUPABASE_URL"] = "http://supabase.test"
-os.environ["ANTHROPIC_API_KEY"] = "test-key"
+os.environ["OPENAI_API_KEY"] = "test-key"
 
 import pytest
 from fastapi.testclient import TestClient
