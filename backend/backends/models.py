@@ -1,4 +1,16 @@
-from sqlalchemy import Column, Integer, String, JSON, Uuid, DateTime, Float
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    UniqueConstraint,
+    Uuid,
+)
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backends.database import Base
 
@@ -20,3 +32,95 @@ class StudySession(Base):
     ease_factor = Column(Float, nullable=False, server_default="2.5")
     interval_days = Column(Integer, nullable=False, server_default="1")
     stability = Column(Float, nullable=False, server_default="0")
+
+    concepts = relationship(
+        "ConceptNode", back_populates="study_session", cascade="all, delete-orphan"
+    )
+    edges = relationship(
+        "ConceptEdge", back_populates="study_session", cascade="all, delete-orphan"
+    )
+
+
+class ConceptNode(Base):
+    __tablename__ = "concept_nodes"
+    __table_args__ = (
+        UniqueConstraint("study_session_id", "key", name="uq_concept_nodes_session_key"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    study_session_id = Column(
+        Integer, ForeignKey("study_sessions.id"), nullable=False, index=True
+    )
+    key = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    explanation = Column(String, nullable=False)
+    retrieval_prompt = Column(String, nullable=False)
+    last_reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    next_review_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    review_count = Column(Integer, nullable=False, server_default="0")
+    interval_days = Column(Integer, nullable=False, server_default="1")
+    stability = Column(Float, nullable=False, server_default="0")
+    difficulty = Column(Float, nullable=False, server_default="0")
+    last_rating = Column(Integer, nullable=True)
+
+    study_session = relationship("StudySession", back_populates="concepts")
+    prerequisite_edges = relationship(
+        "ConceptEdge",
+        foreign_keys="ConceptEdge.prerequisite_node_id",
+        back_populates="prerequisite_node",
+    )
+    dependent_edges = relationship(
+        "ConceptEdge",
+        foreign_keys="ConceptEdge.dependent_node_id",
+        back_populates="dependent_node",
+    )
+    review_events = relationship(
+        "ConceptReviewEvent", back_populates="concept_node", cascade="all, delete-orphan"
+    )
+
+
+class ConceptEdge(Base):
+    __tablename__ = "concept_edges"
+    __table_args__ = (
+        CheckConstraint(
+            "prerequisite_node_id <> dependent_node_id",
+            name="ck_concept_edges_not_self_referential",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    study_session_id = Column(
+        Integer, ForeignKey("study_sessions.id"), nullable=False, index=True
+    )
+    prerequisite_node_id = Column(
+        Integer, ForeignKey("concept_nodes.id"), nullable=False, index=True
+    )
+    dependent_node_id = Column(
+        Integer, ForeignKey("concept_nodes.id"), nullable=False, index=True
+    )
+
+    study_session = relationship("StudySession", back_populates="edges")
+    prerequisite_node = relationship(
+        "ConceptNode",
+        foreign_keys=[prerequisite_node_id],
+        back_populates="prerequisite_edges",
+    )
+    dependent_node = relationship(
+        "ConceptNode",
+        foreign_keys=[dependent_node_id],
+        back_populates="dependent_edges",
+    )
+
+
+class ConceptReviewEvent(Base):
+    __tablename__ = "concept_review_events"
+
+    id = Column(Integer, primary_key=True)
+    concept_node_id = Column(
+        Integer, ForeignKey("concept_nodes.id"), nullable=False, index=True
+    )
+    rating = Column(Integer, nullable=False)
+    answer = Column(String, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    concept_node = relationship("ConceptNode", back_populates="review_events")
