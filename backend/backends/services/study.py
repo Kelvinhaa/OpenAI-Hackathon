@@ -130,10 +130,11 @@ async def generate_recommendation(
 
     try:
         response = await client.responses.parse(
-            model="gpt-5.6",
+            model="gpt-5.6-luna",
             instructions=SYSTEM_PROMPT,
             input=user_message,
             text_format=StudyRecommendation,
+            reasoning={"effort": "low"}
         )
 
         recommendation = response.output_parsed
@@ -163,7 +164,7 @@ async def generate_learning_experience(
 
     try:
         response = await client.responses.parse(
-            model="gpt-5.6",
+            model="gpt-5.6-luna",
             instructions=LEARNING_MAP_SYSTEM_PROMPT,
             input=user_message,
             text_format=GeneratedLearningExperience,
@@ -196,7 +197,7 @@ async def evaluate_retrieval_answer(
 
     try:
         response = await client.responses.parse(
-            model="gpt-5.6",
+            model="gpt-5.6-luna",
             instructions=RETRIEVAL_FEEDBACK_SYSTEM_PROMPT,
             input=user_message,
             text_format=RetrievalFeedbackResponse,

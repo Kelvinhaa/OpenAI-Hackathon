@@ -1397,15 +1397,6 @@ select {
   background: #fffdf8;
   box-shadow: var(--shadow-card);
 }
-.library-map-card::after {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 4px;
-  background: #e87832;
-  content: "";
-}
 .library-map-notebook-mark {
   width: 2.5rem;
   height: 3rem;
@@ -1444,7 +1435,6 @@ select {
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .library-map-link:hover { border-color: #df7940; background: #fff0de; }
 .library-map-link:focus-visible { outline: 2px solid #e87832; outline-offset: 3px; }

@@ -245,8 +245,12 @@ test("library opens a saved map and review shows due concepts", async ({ page })
 
   await page.goto("/library");
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
-  await page.getByRole("link", { name: "Open Cell division map" }).click();
+  const savedMap = page.locator(".library-map-card");
+  await expect(savedMap).toHaveCount(1);
+  await expect(savedMap.evaluate((element) => getComputedStyle(element, "::after").content)).toBe("none");
+  await page.getByRole("link", { name: "Open cell division map" }).click();
   await expect(page).toHaveURL(/\/map\/1$/);
+  await expect(page.getByRole("link", { name: "Plan map" })).toBeVisible();
 
   await page.goto("/review");
   await expect(page.getByRole("heading", { name: "Due for review" })).toBeVisible();

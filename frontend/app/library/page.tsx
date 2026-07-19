@@ -116,7 +116,7 @@ export default function Library() {
                       </dl>
                     </div>
                     <Link href={`/map/${map.id}`} className="library-map-link">
-                      Open {map.subject} map <span aria-hidden="true">→</span>
+                      Open {map.subject.toLocaleLowerCase()} map <span aria-hidden="true">→</span>
                     </Link>
                   </article>
                 );

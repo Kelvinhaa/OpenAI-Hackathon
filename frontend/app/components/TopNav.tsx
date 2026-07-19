@@ -46,7 +46,7 @@ export function TopNav() {
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   const tabs = pathname.startsWith("/map/")
-    ? [...TABS, { href: pathname, label: "Learning map" }]
+    ? [...TABS, { href: pathname, label: "Plan map" }]
     : [...TABS];
   const activeIndex = tabs.findIndex((t) => isActive(t.href));
 
