@@ -6,9 +6,16 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TopNav } from "@/app/components/TopNav";
 import { MindMapprMark } from "@/app/components/MindMapprMark";
+import { Select } from "@/app/components/Select";
 import type { StudyResponse, StudyFormData } from "@/types/study";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+
+const LEVEL_OPTIONS = [
+  { value: "beginner", label: "Beginner" },
+  { value: "intermediate", label: "Intermediate" },
+  { value: "advanced", label: "Advanced" },
+];
 
 type UIState =
   | { status: "idle" }
@@ -20,6 +27,29 @@ type AuthState = {
   accessToken: string | null;
   isGuestSession: boolean;
 };
+
+// A rejected fetch cannot say *why* it failed: an unreachable server and a
+// response the browser blocked both surface as "Failed to fetch". Re-probing
+// with mode "no-cors" separates them, because that request is exempt from the
+// CORS check -- it resolves (opaquely) whenever the server answers at all.
+// Reaching the server here therefore means the original request was blocked,
+// which in local development is nearly always an origin missing from the
+// backend's CORS_ORIGINS allowlist rather than a backend that is down.
+async function describeFetchFailure(message: string): Promise<string> {
+  if (message !== "Failed to fetch") return message;
+
+  try {
+    await fetch(`${API_BASE}/health`, { mode: "no-cors", cache: "no-store" });
+  } catch {
+    return "Cannot reach the server. Make sure the backend is running.";
+  }
+
+  const origin = typeof window === "undefined" ? "this page" : window.location.origin;
+  return (
+    `The server is running but the browser blocked its response to ${origin}. ` +
+    "This is usually a CORS issue: add that exact origin to CORS_ORIGINS on the backend, then restart it."
+  );
+}
 
 const retentionTrend = [
   { label: "Day 1", value: 42 },
@@ -41,6 +71,7 @@ export default function Home() {
   const [formError, setFormError] = useState<string>("");
   const [authState, setAuthState] = useState<AuthState>({ accessToken: null, isGuestSession: false });
   const [isGuestResult, setIsGuestResult] = useState(false);
+  const [level, setLevel] = useState("");
   const { accessToken, isGuestSession } = authState;
 
   useEffect(() => {
@@ -61,7 +92,6 @@ export default function Home() {
     const form = e.currentTarget;
     const subject = (form.elements.namedItem("subject") as HTMLInputElement).value.trim();
     const time = parseInt((form.elements.namedItem("time") as HTMLInputElement).value, 10);
-    const level = (form.elements.namedItem("level") as HTMLSelectElement).value;
     const goal = (form.elements.namedItem("goal") as HTMLInputElement).value.trim() || "";
 
     if (!subject || !time || !level) {
@@ -106,11 +136,7 @@ export default function Home() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
       setUiState({ status: "error", message });
-      setFormError(
-        message === "Failed to fetch"
-          ? "Cannot reach the server. Make sure the backend is running."
-          : message
-      );
+      setFormError(await describeFetchFailure(message));
     }
   }
 
@@ -161,12 +187,14 @@ export default function Home() {
 
             <div className="form-group">
               <label htmlFor="level">Your Level</label>
-              <select id="level" name="level" required defaultValue="">
-                <option value="" disabled>Select level</option>
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </select>
+              <Select
+                id="level"
+                name="level"
+                options={LEVEL_OPTIONS}
+                value={level}
+                onChange={setLevel}
+                placeholder="Select level"
+              />
             </div>
           </div>
 

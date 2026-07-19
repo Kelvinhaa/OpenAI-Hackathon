@@ -21,7 +21,8 @@ test("guest planner previews a plan without offering a protected map", async ({ 
   await page.goto("/");
   await page.getByLabel("What are you studying?").fill("Cell division");
   await page.getByLabel("Study Duration").fill("45");
-  await page.getByLabel("Your Level").selectOption("intermediate");
+  await page.getByLabel("Your Level").click();
+  await page.getByRole("option", { name: "Intermediate" }).click();
   const previewResponse = page.waitForResponse("**/study/preview");
   await page.getByRole("button", { name: "Generate study plan" }).click();
   await expect((await previewResponse).ok()).toBe(true);

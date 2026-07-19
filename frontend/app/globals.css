@@ -261,6 +261,63 @@ select {
   background-repeat: no-repeat; background-position: right 0.875rem center; padding-right: 2.25rem;
 }
 
+/* Custom select — the native <select> popup is OS-drawn and can't take the paper palette */
+.select { position: relative; }
+
+.select-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  height: 2.625rem; width: 100%; padding: 0 0.875rem;
+  font-family: var(--font-body); font-size: 0.875rem; text-align: left;
+  border-radius: var(--radius-input); border: 1px solid var(--input);
+  background: var(--background); color: var(--foreground);
+  cursor: pointer; outline: none; transition: all 0.15s ease;
+}
+/* Disabled only during the brief pre-hydration window, so keep it looking normal
+   rather than flashing the UA's greyed-out treatment. */
+.select-trigger:disabled { color: var(--foreground); opacity: 1; }
+.select-trigger:hover:not(:disabled) { border-color: #c0c0c0; }
+.select-trigger[aria-expanded="true"] {
+  border-color: var(--color-graphite); box-shadow: 0 0 0 3px rgba(36, 36, 36, 0.06);
+}
+
+.select-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-value--placeholder { color: var(--color-stone); }
+
+.select-chevron {
+  flex-shrink: 0; color: var(--color-stone);
+  transition: transform 0.18s ease, color 0.15s ease;
+}
+.select-trigger:hover .select-chevron { color: var(--color-slate); }
+.select-trigger[aria-expanded="true"] .select-chevron { transform: rotate(180deg); color: var(--color-graphite); }
+
+.select-menu {
+  position: absolute; z-index: 30; top: calc(100% + 0.375rem); left: 0; right: 0;
+  max-height: 15rem; overflow-y: auto; padding: 0.25rem; list-style: none;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-input); box-shadow: var(--shadow-card-hover);
+  transform-origin: top center;
+  animation: selectMenuIn 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes selectMenuIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.select-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.5rem 0.625rem; font-size: 0.875rem; color: var(--foreground);
+  border-radius: 6px; cursor: pointer; user-select: none;
+}
+.select-option--active { background: var(--muted); }
+.select-option--selected { color: var(--brand); font-weight: 500; }
+.select-option--selected.select-option--active { background: var(--brand-light); }
+.select-check { font-size: 0.75rem; color: var(--brand); }
+
+@media (prefers-reduced-motion: reduce) {
+  .select-menu { animation: none; }
+  .select-chevron { transition: color 0.15s ease; }
+}
+
 .input-with-suffix { position: relative; display: flex; align-items: center; }
 .input-with-suffix input { padding-right: 4.5rem; }
 .suffix { position: absolute; right: 0.875rem; color: var(--color-stone); font-size: 0.8rem; pointer-events: none; }
@@ -1181,19 +1238,29 @@ select {
 .topnav-mark { width: 1.1875rem; height: 1.1875rem; }
 .topnav-name { font-size: 1.0625rem; letter-spacing: -0.01em; }
 
-.topnav-tabs { display: flex; align-items: center; gap: 1.5rem; }
+.topnav-tabs { display: flex; align-items: center; gap: 1.5rem; position: relative; }
 .topnav-tab {
   font-family: var(--font-mono); font-size: 0.75rem; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--color-stone); text-decoration: none;
   padding: 0.35rem 0; position: relative;
-  transition: color 0.15s ease;
+  transition: color 0.2s ease;
 }
-.topnav-tab:hover { color: var(--muted-foreground); }
+.topnav-tab:hover { color: var(--color-graphite); }
 .topnav-tab--active { color: var(--color-graphite); }
-.topnav-tab--active::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: -0.55rem;
+
+/* One shared underline slides between tabs; JS measures the target and sets
+   transform/width. Position matches the old per-tab ::after exactly. */
+.topnav-indicator {
+  position: absolute; left: 0; bottom: -0.55rem;
   height: 2px; background: var(--brand); border-radius: 2px;
+  pointer-events: none;
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+              width 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topnav-indicator { transition: none; }
 }
 
 .topnav-right {

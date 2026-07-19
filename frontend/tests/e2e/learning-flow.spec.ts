@@ -38,7 +38,8 @@ test("authenticated planner hands a generated plan off to its learning map", asy
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   await page.getByLabel("What are you studying?").fill("Cell division");
   await page.getByLabel("Study Duration").fill("45");
-  await page.getByLabel("Your Level").selectOption("intermediate");
+  await page.getByLabel("Your Level").click();
+  await page.getByRole("option", { name: "Intermediate" }).click();
   await page.getByLabel("Learning Goal").fill("Prepare for a quiz");
   await page.getByRole("button", { name: "Generate study plan" }).click();
 

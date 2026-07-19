@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -13,10 +13,16 @@ const TABS = [
   { href: "/review", label: "Review" },
 ] as const;
 
+// useLayoutEffect warns during SSR; the nav only measures in the browser.
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
 export function TopNav() {
   const router = useRouter();
   const pathname = usePathname();
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const tabsRef = useRef<HTMLElement>(null);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -39,6 +45,43 @@ export function TopNav() {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
+  const tabs = pathname.startsWith("/map/")
+    ? [...TABS, { href: pathname, label: "Learning map" }]
+    : [...TABS];
+  const activeIndex = tabs.findIndex((t) => isActive(t.href));
+
+  // A single underline slides between tabs, so it tracks whichever tab is hovered
+  // (or focused) and falls back to the active one.
+  const targetIndex = hoveredIndex ?? activeIndex;
+
+  useIsomorphicLayoutEffect(() => {
+    const tabsEl = tabsRef.current;
+    const tab = tabsEl?.querySelectorAll<HTMLElement>(".topnav-tab")[targetIndex];
+    if (!tabsEl || !tab) {
+      setIndicator(null);
+      return;
+    }
+
+    let cancelled = false;
+    const measure = () => {
+      if (cancelled) return;
+      const navRect = tabsEl.getBoundingClientRect();
+      const tabRect = tab.getBoundingClientRect();
+      setIndicator({ left: tabRect.left - navRect.left, width: tabRect.width });
+    };
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(tabsEl);
+    // The mono webfont swaps in after hydration and changes every tab's width.
+    document.fonts?.ready.then(measure).catch(() => {});
+
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [targetIndex, tabs.length, userEmail]);
+
   return (
     <header className="topnav">
       <Link href="/" className="topnav-logo">
@@ -47,20 +90,30 @@ export function TopNav() {
       </Link>
 
       {userEmail && (
-        <nav className="topnav-tabs">
-          {TABS.map((t) => (
+        <nav
+          className="topnav-tabs"
+          ref={tabsRef}
+          onMouseLeave={() => setHoveredIndex(null)}
+        >
+          {tabs.map((t, i) => (
             <Link
               key={t.href}
               href={t.href}
-              className={`topnav-tab${isActive(t.href) ? " topnav-tab--active" : ""}`}
+              className={`topnav-tab${i === activeIndex ? " topnav-tab--active" : ""}`}
+              aria-current={i === activeIndex ? "page" : undefined}
+              onMouseEnter={() => setHoveredIndex(i)}
+              onFocus={() => setHoveredIndex(i)}
+              onBlur={() => setHoveredIndex(null)}
             >
               {t.label}
             </Link>
           ))}
-          {pathname.startsWith("/map/") && (
-            <Link href={pathname} className="topnav-tab topnav-tab--active" aria-current="page">
-              Learning map
-            </Link>
+          {indicator && (
+            <span
+              className="topnav-indicator"
+              style={{ transform: `translateX(${indicator.left}px)`, width: indicator.width }}
+              aria-hidden="true"
+            />
           )}
         </nav>
       )}
