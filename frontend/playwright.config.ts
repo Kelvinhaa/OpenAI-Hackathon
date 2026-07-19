@@ -1,7 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
-const port = new URL(baseURL).port || "3000";
+// Must match the port pinned in package.json's dev script. Defaulting to 3000
+// is unsafe here: combined with reuseExistingServer, a different checkout
+// already serving 3000 gets silently tested instead of this one.
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3004";
+const port = new URL(baseURL).port || "3004";
 
 export default defineConfig({
   testDir: "./tests/e2e",

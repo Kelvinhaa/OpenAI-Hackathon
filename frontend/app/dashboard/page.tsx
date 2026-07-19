@@ -9,7 +9,7 @@ import { Wordmark } from "@/app/components/Wordmark";
 import type { ConceptReviewQueueItem, StudyResponse, StatsResponse } from "@/types/study";
 import { formatNextReview, stabilityPct } from "@/lib/reviewFormat";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 export default function Dashboard() {
   const router = useRouter();

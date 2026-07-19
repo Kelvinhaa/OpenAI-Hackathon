@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { TopNav } from "@/app/components/TopNav";
 import type { StudyResponse } from "@/types/study";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 function conceptCount(map: StudyResponse) {
   return map.concept_count ?? map.concepts.length;

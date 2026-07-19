@@ -14,7 +14,7 @@ import type {
   StudyResponse,
 } from "@/types/study";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 export default function MapWorkspace({ studyId }: { studyId: string }) {
   const [study, setStudy] = useState<StudyResponse | null>(null);

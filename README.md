@@ -56,7 +56,7 @@ Create `frontend/.env.local` with the public values used by the browser:
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8001
 ```
 
 `backend/.env.example` contains safe backend placeholders. Do not commit either
@@ -70,8 +70,14 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn backends.main:app --reload --port 8000
+uvicorn backends.main:app --reload --port 8001
 ```
+
+The API is pinned to **8001** rather than the usual 8000 so it cannot collide with
+another FastAPI backend on the same machine. Two backends sharing a port is not a
+loud failure: the second one to start simply loses, and the other project's
+frontend then talks to whichever won — producing `401 Invalid token` on every
+signed-in request, because the two trust different Supabase projects.
 
 Start the web app in another terminal:
 
@@ -102,7 +108,7 @@ alembic upgrade head
 | `CORS_ORIGINS` | Backend | Comma-separated allowed frontend origins. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Frontend | Supabase project URL. |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Frontend | Browser-safe Supabase publishable key. |
-| `NEXT_PUBLIC_API_URL` | Frontend | FastAPI base URL; defaults to `http://localhost:8000`. |
+| `NEXT_PUBLIC_API_URL` | Frontend | FastAPI base URL; defaults to `http://localhost:8001`. |
 | `E2E_EMAIL` / `E2E_PASSWORD` | Playwright | Local test account for authenticated browser tests. |
 | `PLAYWRIGHT_BASE_URL` | Playwright | Optional frontend URL; defaults to `http://127.0.0.1:3000`. |
 

@@ -23,6 +23,9 @@ frontend/test-results/
 playwright/.auth/
 frontend/playwright/.auth/
 
+# Playwright MCP snapshots and screenshots
+.playwright-mcp/
+
 # Local task artifacts
 .superpowers/
 .worktrees/

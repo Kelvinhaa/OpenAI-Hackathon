@@ -6,6 +6,11 @@ os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["SUPABASE_URL"] = "http://supabase.test"
 os.environ["OPENAI_API_KEY"] = "test-key"
 os.environ["REDIS_URL"] = "memory://"
+# Cleared, not set: the CORS tests must exercise the allowlist committed in
+# main.py. If a developer exports CORS_ORIGINS in their shell, leaving it in
+# place would make those tests pass against that local value and hide a missing
+# origin from everyone who does not have the same export.
+os.environ.pop("CORS_ORIGINS", None)
 
 import pytest
 from fastapi.testclient import TestClient

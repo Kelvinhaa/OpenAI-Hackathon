@@ -21,7 +21,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn backends.main:app --reload --port 8000
+uvicorn backends.main:app --reload --port 8001   # 8001, not 8000 -- another checkout on this machine serves 8000
 ```
 
 Set up and run the frontend separately:

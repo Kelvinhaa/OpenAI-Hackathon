@@ -16,12 +16,28 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+# Port 3004 is the frontend's pinned dev port (see frontend/package.json). Both
+# the localhost and 127.0.0.1 spellings are listed because they are distinct
+# origins to the browser, and which one is used depends on how the developer
+# typed the URL. Keep this default in sync with that pinned port: a missing
+# origin surfaces in the UI as "Cannot reach the server", not as a CORS error.
+_DEFAULT_CORS_ORIGINS = ",".join(
+    [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3004",
+        "http://127.0.0.1:3004",
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+        "https://mindmappr-alpha.vercel.app",
+        "https://mindmappr-omega.vercel.app",
+    ]
+)
+
+
 def _parse_cors_origins() -> list[str]:
     # Supports cors origin for deployment flexibility.
-    raw_origins = os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:5500,http://localhost:5500,https://mindmappr-alpha.vercel.app,https://mindmappr-omega.vercel.app",
-    )
+    raw_origins = os.getenv("CORS_ORIGINS", _DEFAULT_CORS_ORIGINS)
     return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
 origins = _parse_cors_origins()
@@ -58,5 +74,10 @@ def db_test():
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", "8000"))
+    # 8001, not the conventional 8000: another Mindmappr checkout on this machine
+    # runs its own FastAPI backend on 8000. Sharing the port is worse than it
+    # sounds -- the two trust different Supabase projects, so a frontend that
+    # reaches the wrong backend gets 401 "Invalid token" on every signed-in
+    # request, which reads as a login bug rather than a wiring one.
+    port = int(os.getenv("PORT", "8001"))
     uvicorn.run(app, host="0.0.0.0", port=port)
