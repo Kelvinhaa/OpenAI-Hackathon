@@ -29,8 +29,7 @@ _DEFAULT_CORS_ORIGINS = ",".join(
         "http://127.0.0.1:3004",
         "http://127.0.0.1:5500",
         "http://localhost:5500",
-        "https://mindmappr-alpha.vercel.app",
-        "https://mindmappr-omega.vercel.app",
+        "https://open-ai-hackathon-rho.vercel.app"
     ]
 )
 
