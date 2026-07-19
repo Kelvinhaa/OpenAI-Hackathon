@@ -8,7 +8,7 @@ import { MindMapprMark } from "@/app/components/MindMapprMark";
 import { Wordmark } from "@/app/components/Wordmark";
 
 const TABS = [
-  { href: "/", label: "Compose" },
+  { href: "/", label: "Planner" },
   { href: "/library", label: "Library" },
   { href: "/review", label: "Review" },
 ] as const;
@@ -17,13 +17,11 @@ export function TopNav() {
   const router = useRouter();
   const pathname = usePathname();
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUserEmail(session?.user?.email ?? null);
-      setReady(true);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserEmail(session?.user?.email ?? null);
@@ -59,25 +57,28 @@ export function TopNav() {
               {t.label}
             </Link>
           ))}
+          {pathname.startsWith("/map/") && (
+            <Link href={pathname} className="topnav-tab topnav-tab--active" aria-current="page">
+              Learning map
+            </Link>
+          )}
         </nav>
       )}
 
       <div className="topnav-right">
-        {ready && (
-          userEmail ? (
-            <>
-              <div className="topnav-user">
-                <span className="topnav-avatar">{userEmail[0]?.toUpperCase()}</span>
-                <span className="topnav-email">{userEmail}</span>
-              </div>
-              <button className="btn-signout" onClick={handleSignOut}>Sign out</button>
-            </>
-          ) : (
-            <div className="topnav-auth">
-              <Link href="/login" className="btn btn-ghost">Log in</Link>
-              <Link href="/register" className="btn btn-primary">Sign up</Link>
+        {userEmail ? (
+          <>
+            <div className="topnav-user">
+              <span className="topnav-avatar">{userEmail[0]?.toUpperCase()}</span>
+              <span className="topnav-email">{userEmail}</span>
             </div>
-          )
+            <button className="btn-signout" onClick={handleSignOut}>Sign out</button>
+          </>
+        ) : (
+          <div className="topnav-auth">
+            <Link href="/login" className="btn btn-ghost">Sign in</Link>
+            <Link href="/register" className="btn btn-primary">Sign up</Link>
+          </div>
         )}
       </div>
     </header>

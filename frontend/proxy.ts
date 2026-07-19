@@ -28,21 +28,22 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const isQualifiedUser = Boolean(user?.email && !user.is_anonymous);
 
   const { pathname } = request.nextUrl;
   const isAuthPage =
     pathname.startsWith("/login") || pathname.startsWith("/register");
-  const isProtected = ["/dashboard", "/library", "/review"].some((path) =>
+  const isProtected = ["/dashboard", "/library", "/map", "/review"].some((path) =>
     pathname.startsWith(path)
   );
 
-  if (!user && isProtected) {
+  if (!isQualifiedUser && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthPage) {
+  if (isQualifiedUser && isAuthPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

@@ -8,7 +8,12 @@ import pytest
 from openai import AsyncOpenAI
 from packaging.version import Version
 
-from backends.schemas.study import GeneratedLearningExperience, StudyRecommendation, Technique
+from backends.schemas.study import (
+    GeneratedLearningExperience,
+    RetrievalFeedbackResponse,
+    StudyRecommendation,
+    Technique,
+)
 from backends.services import study
 
 
@@ -189,3 +194,34 @@ async def test_generate_learning_experience_raises_for_failed_or_unparsed_output
         await study.generate_learning_experience(
             subject="Newton's laws", level="undergraduate", time=30
         )
+
+
+@pytest.mark.asyncio
+async def test_evaluate_retrieval_answer_uses_bounded_structured_feedback(monkeypatch):
+    expected = RetrievalFeedbackResponse(
+        feedback="You named the outcome. Add how chromosomes separate before two nuclei form.",
+        suggested_rating=3,
+        prerequisite_concept_key="chromosomes",
+    )
+    mock_client = Mock()
+    mock_client.responses.parse = AsyncMock(
+        return_value=SimpleNamespace(output_parsed=expected.model_dump())
+    )
+    monkeypatch.setattr(study, "client", mock_client)
+
+    concept = SimpleNamespace(
+        title="Mitosis",
+        explanation="Nuclear division creates matching nuclei.",
+        retrieval_prompt="Why does mitosis create identical cells?",
+    )
+    result = await study.evaluate_retrieval_answer(
+        concept=concept,
+        answer="It creates two cells.",
+        allowed_prerequisite_keys=["chromosomes", "cell-cycle"],
+    )
+
+    assert result == expected
+    parse_call = mock_client.responses.parse.await_args.kwargs
+    assert parse_call["model"] == "gpt-5.6"
+    assert "two sentences" in parse_call["instructions"]
+    assert "chromosomes, cell-cycle" in parse_call["input"]

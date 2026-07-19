@@ -12,8 +12,6 @@ export interface StudyRecommendation {
 
 export type FsrsRating = 1 | 2 | 3 | 4;
 
-export type MasteryState = "new" | "needs_work" | "growing" | "mastered";
-
 export interface ConceptNodeResponse {
   id: number;
   key: string;
@@ -49,6 +47,8 @@ export interface StudyResponse {
   review_count: number;
   interval_days: number;
   stability: number;
+  concept_count: number;
+  due_concept_count: number;
   concepts: ConceptNodeResponse[];
   edges: ConceptEdgeResponse[];
 }
@@ -140,5 +140,8 @@ export interface ConceptReviewResponse {
   stability: number;
   difficulty: number;
   last_rating: FsrsRating;
-  mastery_state: MasteryState;
+}
+
+export interface ConceptReviewQueueItem extends ConceptNodeResponse {
+  subject: string;
 }

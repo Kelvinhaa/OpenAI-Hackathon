@@ -2,8 +2,12 @@ import math
 import os
 from datetime import datetime, timedelta, timezone
 from openai import AsyncOpenAI
-from typing import Optional
-from backends.schemas.study import GeneratedLearningExperience, StudyRecommendation
+from typing import Optional, Sequence
+from backends.schemas.study import (
+    GeneratedLearningExperience,
+    RetrievalFeedbackResponse,
+    StudyRecommendation,
+)
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
@@ -75,9 +79,23 @@ Rules:
 - Include 2-4 actionable tips.
 - Write directly and confidently for the learner."""
 
+RETRIEVAL_FEEDBACK_SYSTEM_PROMPT = """You give formative feedback on a learner's retrieval-practice answer.
+Use the supplied concept explanation and retrieval prompt as the source of truth.
+
+Rules:
+- Give a concise explanation of what the learner got right and what is missing in at most two sentences.
+- Choose suggested_rating as an integer from 1 to 4: 1=Again, 2=Hard, 3=Good, 4=Easy.
+- Set prerequisite_concept_key only if a missing prerequisite is the main reason the answer is incomplete; otherwise use null.
+- If supplied, prerequisite_concept_key must exactly match one of the allowed direct prerequisite keys in the request.
+- Do not address the learner's rating choice, do not invent facts, and do not write to any database."""
+
 
 class LearningExperienceGenerationError(RuntimeError):
     """Raised when a complete study plan and learning map cannot be generated."""
+
+
+class RetrievalFeedbackGenerationError(RuntimeError):
+    """Raised when formative retrieval feedback cannot be generated safely."""
 
 
 def _fallback_recommendation(subject: str, time: int, level: str) -> StudyRecommendation:
@@ -158,6 +176,36 @@ async def generate_learning_experience(
         raise LearningExperienceGenerationError()
 
     return experience
+
+
+async def evaluate_retrieval_answer(
+    concept,
+    answer: str,
+    allowed_prerequisite_keys: Sequence[str],
+) -> RetrievalFeedbackResponse:
+    """Generate non-persistent, bounded feedback for one concept answer."""
+    allowed_keys_text = ", ".join(allowed_prerequisite_keys) or "none"
+    user_message = (
+        "Evaluate this retrieval-practice answer:\n"
+        f"- Concept title: {concept.title}\n"
+        f"- Concept explanation: {concept.explanation}\n"
+        f"- Retrieval prompt: {concept.retrieval_prompt}\n"
+        f"- Allowed direct prerequisite concept keys: {allowed_keys_text}\n"
+        f"- Learner answer: {answer}"
+    )
+
+    try:
+        response = await client.responses.parse(
+            model="gpt-5.6",
+            instructions=RETRIEVAL_FEEDBACK_SYSTEM_PROMPT,
+            input=user_message,
+            text_format=RetrievalFeedbackResponse,
+        )
+        feedback = RetrievalFeedbackResponse.model_validate(response.output_parsed)
+    except Exception as exc:
+        raise RetrievalFeedbackGenerationError() from exc
+
+    return feedback
 
 
 # ---------------------------------------------------------------------------

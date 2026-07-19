@@ -6,14 +6,14 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { MindMapprMark } from "@/app/components/MindMapprMark";
 import { Wordmark } from "@/app/components/Wordmark";
-import type { StudyResponse, ReviewQueueItem, StatsResponse } from "@/types/study";
-import { formatNextReview, stabilityPct, urgencyCardClass, urgencyBadge } from "@/lib/reviewFormat";
+import type { ConceptReviewQueueItem, StudyResponse, StatsResponse } from "@/types/study";
+import { formatNextReview, stabilityPct } from "@/lib/reviewFormat";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export default function Dashboard() {
   const router = useRouter();
-  const [queue, setQueue]       = useState<ReviewQueueItem[]>([]);
+  const [queue, setQueue]       = useState<ConceptReviewQueueItem[]>([]);
   const [upcoming, setUpcoming] = useState<StudyResponse[]>([]);
   const [stats, setStats]       = useState<StatsResponse | null>(null);
   const [loading, setLoading]   = useState(true);
@@ -26,13 +26,12 @@ export default function Dashboard() {
       fetch(`${API_BASE}/study/stats`,        { headers }),
     ]);
 
-    const queueData: ReviewQueueItem[] = qRes.ok  ? await qRes.json()  : [];
+    const queueData: ConceptReviewQueueItem[] = qRes.ok  ? await qRes.json()  : [];
     const allData:   StudyResponse[]   = sRes.ok  ? await sRes.json()  : [];
     const statsData: StatsResponse | null = stRes.ok ? await stRes.json() : null;
 
-    const dueIds = new Set(queueData.map(q => q.id));
     setQueue(queueData);
-    setUpcoming(allData.filter(s => !dueIds.has(s.id)));
+    setUpcoming(allData);
     setStats(statsData);
     setLoading(false);
   }, []);
@@ -88,34 +87,30 @@ export default function Dashboard() {
               <span className="dash-section-count dash-section-count--due">{queue.length}</span>
             </div>
             <div className="session-list">
-              {queue.map(s => {
-                const badge = urgencyBadge(s);
-                return (
-                  <div key={s.id} className={urgencyCardClass(s)}>
-                    <div className="session-info">
-                      <span className="session-subject">{s.subject}</span>
-                      <span className="session-meta">
-                        {s.level} · {s.time} min · {s.review_count}× reviewed
-                      </span>
-                      <span className={badge.cls}>{badge.label}</span>
-                      <div className="stability-bar-wrap">
-                        <div className="stability-bar-track">
-                          <div
-                            className="stability-bar-fill"
-                            style={{ width: `${stabilityPct(s.stability)}%` }}
-                          />
-                        </div>
-                        <span className="stability-label">
-                          {s.stability > 0 ? `S: ${s.stability.toFixed(1)}d` : "New"}
-                        </span>
+              {queue.map(s => (
+                <div key={s.id} className="session-card session-card--due">
+                  <div className="session-info">
+                    <span className="session-subject">{s.title}</span>
+                    <span className="session-meta">
+                      {s.subject} · {s.review_count}× reviewed
+                    </span>
+                    <div className="stability-bar-wrap">
+                      <div className="stability-bar-track">
+                        <div
+                          className="stability-bar-fill"
+                          style={{ width: `${stabilityPct(s.stability)}%` }}
+                        />
                       </div>
+                      <span className="stability-label">
+                        {s.stability > 0 ? `S: ${s.stability.toFixed(1)}d` : "New"}
+                      </span>
                     </div>
-                    <Link href={`/review?session=${s.id}`} className="btn btn-primary">
-                      Review
-                    </Link>
                   </div>
-                );
-              })}
+                  <Link href="/review" className="btn btn-primary">
+                    Review
+                  </Link>
+                </div>
+              ))}
             </div>
           </section>
         )}
@@ -148,7 +143,7 @@ export default function Dashboard() {
                       </span>
                     </div>
                   </div>
-                  <Link href={`/review?session=${s.id}`} className="btn btn-ghost">
+                  <Link href="/review" className="btn btn-ghost">
                     Review early
                   </Link>
                 </div>

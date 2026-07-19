@@ -6,17 +6,19 @@ from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
 from backends.database import get_db
 from backends.dependencies import limiter
-from backends.models import ConceptEdge, ConceptNode, StudySession
+from backends.models import ConceptEdge, ConceptNode, ConceptReviewEvent, StudySession
 from backends.schemas.study import (
     StudyRequest, StudyResponse, PreviewResponse,
     ReviewRequest, ReviewResponse,
-    ReviewQueueItem, StatsResponse,
+    ConceptReviewQueueItem, ConceptReviewRequest, ConceptReviewResponse,
+    RetrievalAnswerRequest, RetrievalFeedbackResult, StatsResponse,
     ReviewPreviewResponse,
     StudyRecommendation,
 )
 from backends.services.study import (
     LearningExperienceGenerationError, apply_fsrs, generate_learning_experience,
     generate_recommendation,
+    RetrievalFeedbackGenerationError, evaluate_retrieval_answer,
     retrievability_now, predict_review_outcomes,
 )
 from backends.auth import get_current_user_id
@@ -27,12 +29,85 @@ router = APIRouter(
 )
 
 
+def _parse_user_id(user_id: str | uuid.UUID) -> uuid.UUID:
+    try:
+        return user_id if isinstance(user_id, uuid.UUID) else uuid.UUID(user_id)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user identity in token",
+        ) from exc
+
+
+def _owned_concept_or_404(
+    db: Session, concept_id: int, user_id: str | uuid.UUID
+) -> ConceptNode:
+    parsed_user_id = _parse_user_id(user_id)
+    concept = (
+        db.query(ConceptNode)
+        .join(StudySession, ConceptNode.study_session_id == StudySession.id)
+        .filter(
+            ConceptNode.id == concept_id,
+            StudySession.user_id == parsed_user_id,
+        )
+        .first()
+    )
+    if concept is None:
+        raise HTTPException(status_code=404, detail="Concept not found")
+    return concept
+
+
+def _study_response(session: StudySession, db: Session) -> StudyResponse:
+    concepts = (
+        db.query(ConceptNode)
+        .filter(ConceptNode.study_session_id == session.id)
+        .order_by(ConceptNode.id)
+        .all()
+    )
+    edges = (
+        db.query(ConceptEdge)
+        .filter(ConceptEdge.study_session_id == session.id)
+        .order_by(ConceptEdge.id)
+        .all()
+    )
+    due_concept_count = (
+        db.query(ConceptNode)
+        .filter(
+            ConceptNode.study_session_id == session.id,
+            ConceptNode.next_review_at.is_not(None),
+            ConceptNode.next_review_at <= datetime.now(timezone.utc),
+        )
+        .count()
+    )
+    return StudyResponse(
+        id=session.id,
+        user_id=session.user_id,
+        time=session.time,
+        subject=session.subject,
+        level=session.level,
+        goal=session.goal,
+        recommendation=session.recommendation,
+        created_at=session.created_at,
+        last_reviewed_at=session.last_reviewed_at,
+        next_review_at=session.next_review_at,
+        review_count=session.review_count,
+        interval_days=session.interval_days,
+        stability=session.stability,
+        concept_count=len(concepts),
+        due_concept_count=due_concept_count,
+        concepts=concepts,
+        edges=edges,
+    )
+
+
 @router.get("", response_model=list[StudyResponse])
 def list_studies(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    return db.query(StudySession).filter(StudySession.user_id == user_id).all()
+    parsed_user_id = _parse_user_id(user_id)
+    sessions = db.query(StudySession).filter(StudySession.user_id == parsed_user_id).all()
+    return [_study_response(session, db) for session in sessions]
 
 
 @router.post("", response_model=StudyResponse)
@@ -56,10 +131,7 @@ async def create_study(
             detail="Learning map generation is temporarily unavailable. Please try again.",
         )
 
-    try:
-        parsed_user_id = uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user identity in token")
+    parsed_user_id = _parse_user_id(user_id)
 
     recommendation = StudyRecommendation(
         summary=experience.summary,
@@ -106,35 +178,7 @@ async def create_study(
         raise
 
     db.refresh(session)
-    concepts = (
-        db.query(ConceptNode)
-        .filter(ConceptNode.study_session_id == session.id)
-        .order_by(ConceptNode.id)
-        .all()
-    )
-    edges = (
-        db.query(ConceptEdge)
-        .filter(ConceptEdge.study_session_id == session.id)
-        .order_by(ConceptEdge.id)
-        .all()
-    )
-    return StudyResponse(
-        id=session.id,
-        user_id=session.user_id,
-        time=session.time,
-        subject=session.subject,
-        level=session.level,
-        goal=session.goal,
-        recommendation=recommendation,
-        created_at=session.created_at,
-        last_reviewed_at=session.last_reviewed_at,
-        next_review_at=session.next_review_at,
-        review_count=session.review_count,
-        interval_days=session.interval_days,
-        stability=session.stability,
-        concepts=concepts,
-        edges=edges,
-    )
+    return _study_response(session, db)
 
 
 @router.post("/preview", response_model=PreviewResponse)
@@ -159,51 +203,142 @@ async def preview_study(
     )
 
 
-@router.get("/review-queue", response_model=list[ReviewQueueItem])
+@router.get("/review-queue", response_model=list[ConceptReviewQueueItem])
 def get_review_queue(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
     now = datetime.now(timezone.utc)
-    one_day_ago = now - timedelta(days=1)
-
-    sessions = (
-        db.query(StudySession)
-        .filter(StudySession.user_id == user_id)
-        .filter(or_(
-            (StudySession.next_review_at == None) & (StudySession.created_at <= one_day_ago),
-            StudySession.next_review_at <= now,
-        ))
-        .order_by(StudySession.next_review_at.asc().nullsfirst())
+    parsed_user_id = _parse_user_id(user_id)
+    due_concepts = (
+        db.query(ConceptNode, StudySession.subject)
+        .join(StudySession, ConceptNode.study_session_id == StudySession.id)
+        .filter(
+            StudySession.user_id == parsed_user_id,
+            ConceptNode.next_review_at.is_not(None),
+            ConceptNode.next_review_at <= now,
+        )
+        .order_by(ConceptNode.next_review_at.asc())
         .all()
     )
-
-    result = []
-    for s in sessions:
-        if s.next_review_at:
-            days_overdue = (now - s.next_review_at).total_seconds() / 86400
-        else:
-            days_overdue = (now - s.created_at).total_seconds() / 86400
-        elapsed_since_review = (
-            (now - s.last_reviewed_at).total_seconds() / 86400
-            if s.last_reviewed_at else (now - s.created_at).total_seconds() / 86400
+    return [
+        ConceptReviewQueueItem(
+            id=concept.id,
+            key=concept.key,
+            title=concept.title,
+            explanation=concept.explanation,
+            retrieval_prompt=concept.retrieval_prompt,
+            last_reviewed_at=concept.last_reviewed_at,
+            next_review_at=concept.next_review_at,
+            review_count=concept.review_count,
+            interval_days=concept.interval_days,
+            stability=concept.stability,
+            difficulty=concept.difficulty,
+            last_rating=concept.last_rating,
+            subject=subject,
         )
-        result.append(ReviewQueueItem(
-            id=s.id,
-            subject=s.subject,
-            level=s.level,
-            goal=s.goal,
-            time=s.time,
-            review_count=s.review_count,
-            interval_days=s.interval_days,
-            next_review_at=s.next_review_at,
-            days_overdue=round(days_overdue, 2),
-            stability=s.stability,
-            ease_factor=s.ease_factor,
-            retrievability=round(retrievability_now(s.stability, elapsed_since_review), 3),
-            recommendation=StudyRecommendation(**s.recommendation),
-        ))
-    return result
+        for concept, subject in due_concepts
+    ]
+
+
+@router.post(
+    "/concepts/{concept_id}/feedback", response_model=RetrievalFeedbackResult
+)
+async def get_concept_feedback(
+    concept_id: int,
+    body: RetrievalAnswerRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    concept = _owned_concept_or_404(db, concept_id, user_id)
+    prerequisite_concepts = (
+        db.query(ConceptNode)
+        .join(
+            ConceptEdge,
+            ConceptEdge.prerequisite_node_id == ConceptNode.id,
+        )
+        .filter(
+            ConceptNode.study_session_id == concept.study_session_id,
+            ConceptEdge.study_session_id == concept.study_session_id,
+            ConceptEdge.dependent_node_id == concept.id,
+        )
+        .order_by(ConceptNode.key)
+        .all()
+    )
+    allowed_prerequisite_keys = [node.key for node in prerequisite_concepts]
+    try:
+        feedback = await evaluate_retrieval_answer(
+            concept=concept,
+            answer=body.answer,
+            allowed_prerequisite_keys=allowed_prerequisite_keys,
+        )
+    except RetrievalFeedbackGenerationError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Retrieval feedback is temporarily unavailable. Please try again.",
+        )
+
+    prerequisite_concept_id = next(
+        (
+            node.id
+            for node in prerequisite_concepts
+            if node.key == feedback.prerequisite_concept_key
+        ),
+        None,
+    )
+
+    return RetrievalFeedbackResult(
+        feedback=feedback.feedback,
+        suggested_rating=feedback.suggested_rating,
+        prerequisite_concept_id=prerequisite_concept_id,
+    )
+
+
+@router.post(
+    "/concepts/{concept_id}/review", response_model=ConceptReviewResponse
+)
+def review_concept(
+    concept_id: int,
+    body: ConceptReviewRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    concept = _owned_concept_or_404(db, concept_id, user_id)
+    now = datetime.now(timezone.utc)
+    last_reviewed_at = concept.last_reviewed_at
+    if last_reviewed_at is not None and last_reviewed_at.tzinfo is None:
+        last_reviewed_at = last_reviewed_at.replace(tzinfo=timezone.utc)
+    elapsed_days = (
+        (now - last_reviewed_at).total_seconds() / 86_400
+        if last_reviewed_at is not None
+        else None
+    )
+    interval_days, stability, difficulty = apply_fsrs(
+        stability=concept.stability,
+        difficulty=concept.difficulty,
+        review_count=concept.review_count,
+        rating=body.rating,
+        elapsed_days=elapsed_days,
+    )
+
+    concept.last_reviewed_at = now
+    concept.next_review_at = now + timedelta(days=interval_days)
+    concept.review_count += 1
+    concept.interval_days = interval_days
+    concept.stability = stability
+    concept.difficulty = difficulty
+    concept.last_rating = body.rating
+    db.add(
+        ConceptReviewEvent(
+            concept_node_id=concept.id,
+            rating=body.rating,
+            answer=body.answer,
+            reviewed_at=now,
+        )
+    )
+    db.commit()
+    db.refresh(concept)
+    return concept
 
 
 @router.get("/{session_id}/review-preview", response_model=ReviewPreviewResponse)
@@ -212,9 +347,10 @@ def get_review_preview(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
+    parsed_user_id = _parse_user_id(user_id)
     session = db.query(StudySession).filter(
         StudySession.id == session_id,
-        StudySession.user_id == user_id,
+        StudySession.user_id == parsed_user_id,
     ).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -255,11 +391,12 @@ def get_stats(
 ):
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    parsed_user_id = _parse_user_id(user_id)
 
-    total = db.query(StudySession).filter(StudySession.user_id == user_id).count()
+    total = db.query(StudySession).filter(StudySession.user_id == parsed_user_id).count()
     due_today = (
         db.query(StudySession)
-        .filter(StudySession.user_id == user_id)
+        .filter(StudySession.user_id == parsed_user_id)
         .filter(or_(
             StudySession.next_review_at <= now,
             StudySession.next_review_at == None,
@@ -268,13 +405,13 @@ def get_stats(
     )
     reviewed_today = (
         db.query(StudySession)
-        .filter(StudySession.user_id == user_id)
+        .filter(StudySession.user_id == parsed_user_id)
         .filter(StudySession.last_reviewed_at >= today_start)
         .count()
     )
     avg_s = (
         db.query(sqlfunc.avg(StudySession.stability))
-        .filter(StudySession.user_id == user_id)
+        .filter(StudySession.user_id == parsed_user_id)
         .scalar()
     )
 
@@ -292,14 +429,15 @@ def get_study(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
+    parsed_user_id = _parse_user_id(user_id)
     session = (
         db.query(StudySession)
-        .filter(StudySession.id == study_id, StudySession.user_id == user_id)
+        .filter(StudySession.id == study_id, StudySession.user_id == parsed_user_id)
         .first()
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Study session not found")
-    return session
+    return _study_response(session, db)
 
 
 @router.post("/{session_id}/review", response_model=ReviewResponse)
@@ -309,9 +447,10 @@ def review_session(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    parsed_user_id = _parse_user_id(user_id)
     session = db.query(StudySession).filter(
         StudySession.id == session_id,
-        StudySession.user_id == user_id,
+        StudySession.user_id == parsed_user_id,
     ).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")

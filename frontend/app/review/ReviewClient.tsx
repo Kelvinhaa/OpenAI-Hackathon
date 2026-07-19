@@ -1,265 +1,144 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 import { TopNav } from "@/app/components/TopNav";
-import type { ReviewQueueItem, ReviewPreviewResponse, ReviewResponse } from "@/types/study";
-import { stabilityPct, urgencyCardClass, urgencyBadge, formatIntervalDays } from "@/lib/reviewFormat";
+import { RecallCheck } from "@/app/components/RecallCheck";
+import { createClient } from "@/lib/supabase/client";
+import type {
+  ConceptReviewQueueItem,
+  ConceptReviewRequest,
+  ConceptReviewResponse,
+  RetrievalFeedbackRequest,
+  RetrievalFeedbackResponse,
+} from "@/types/study";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-const RATING_LABELS: Record<number, string> = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" };
-
-type Mode = "loading" | "empty" | "queue" | "active" | "confirmed";
-
-type ConfirmState = {
-  rating: number;
-  days: number;
-  beforeStability: number;
-  afterStability: number;
-  beforeRetrievability: number;
+type RecordedReview = {
+  title: string;
+  nextReviewAt: string;
 };
-
-function memoryNote(retrievability: number): string {
-  if (retrievability < 0.5) return "You're past the ideal review point — this is fading. Good time to reinforce it.";
-  if (retrievability < 0.8) return "Recall is softening. A review now will lock it back in.";
-  return "Still fresh — reviewing now keeps it that way.";
-}
 
 export default function ReviewClient() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const [token, setToken] = useState<string | null>(null);
+  const [queue, setQueue] = useState<ConceptReviewQueueItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [recorded, setRecorded] = useState<RecordedReview | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
 
-  const [token, setToken]     = useState<string | null>(null);
-  const [mode, setMode]       = useState<Mode>("loading");
-  const [queue, setQueue]     = useState<ReviewQueueItem[]>([]);
-  const [preview, setPreview] = useState<ReviewPreviewResponse | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
-  const [cameFromQueue, setCameFromQueue] = useState(false);
-
-  const fetchQueue = useCallback(async (t: string, enter: boolean) => {
-    const res = await fetch(`${API_BASE}/study/review-queue`, {
-      headers: { Authorization: `Bearer ${t}` },
-    });
-    const data: ReviewQueueItem[] = res.ok ? await res.json() : [];
-    const sorted = [...data].sort((a, b) => a.retrievability - b.retrievability);
-    setQueue(sorted);
-    if (enter) setMode(sorted.length ? "queue" : "empty");
-  }, []);
-
-  const fetchPreview = useCallback(async (t: string, id: string | number) => {
-    const res = await fetch(`${API_BASE}/study/${id}/review-preview`, {
-      headers: { Authorization: `Bearer ${t}` },
-    });
-    if (!res.ok) { setMode("empty"); return; }
-    const data: ReviewPreviewResponse = await res.json();
-    setPreview(data);
-    setConfirm(null);
-    setMode("active");
+  const fetchQueue = useCallback(async (accessToken: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/study/review-queue`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      setQueue(response.ok ? await response.json() : []);
+    } catch {
+      setQueue([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { router.push("/login"); return; }
-      const t = session.access_token;
-      setToken(t);
-      const sessionParam = searchParams.get("session");
-      if (sessionParam) {
-        fetchPreview(t, sessionParam);
-      } else {
-        setCameFromQueue(true);
-        fetchQueue(t, true);
+      if (!session) {
+        router.push("/login");
+        return;
       }
+      setToken(session.access_token);
+      fetchQueue(session.access_token);
     });
-  }, [router, searchParams, fetchPreview, fetchQueue]);
+  }, [fetchQueue, router]);
 
-  async function submitRating(rating: number) {
-    if (!preview || !token) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch(`${API_BASE}/study/${preview.id}/review`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ rating }),
-      });
-      if (res.ok) {
-        const data: ReviewResponse = await res.json();
-        setConfirm({
-          rating,
-          days: data.interval_days,
-          beforeStability: preview.stability,
-          afterStability: data.stability,
-          beforeRetrievability: preview.retrievability,
-        });
-        setMode("confirmed");
-        fetchQueue(token, false);
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  const requestFeedback = useCallback(async (conceptId: number, body: RetrievalFeedbackRequest): Promise<RetrievalFeedbackResponse> => {
+    if (!token) throw new Error("Your session has expired. Please sign in again.");
+    const response = await fetch(`${API_BASE}/study/concepts/${conceptId}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error("We could not check that response.");
+    return response.json();
+  }, [token]);
 
-  function cancelActive() {
-    if (cameFromQueue) { setPreview(null); setMode("queue"); }
-    else router.push("/dashboard");
-  }
+  const requestReview = useCallback(async (conceptId: number, body: ConceptReviewRequest): Promise<ConceptReviewResponse> => {
+    if (!token) throw new Error("Your session has expired. Please sign in again.");
+    const reviewedConcept = queue[activeIndex];
+    const response = await fetch(`${API_BASE}/study/concepts/${conceptId}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error("We could not save that rating.");
+    const result: ConceptReviewResponse = await response.json();
+    setRecorded({ title: reviewedConcept?.title ?? "Concept", nextReviewAt: result.next_review_at });
+    return result;
+  }, [activeIndex, queue, token]);
 
-  function backFromConfirm() {
-    if (cameFromQueue && queue.length > 0) { setPreview(null); setMode("queue"); }
-    else router.push("/dashboard");
+  const currentConcept = queue[activeIndex];
+  const remainingCount = Math.max(queue.length - activeIndex - (recorded ? 1 : 0), 0);
+  const remainingLabel = `${remainingCount} concept${remainingCount === 1 ? "" : "s"} remain`;
+
+  function showNextConcept() {
+    setActiveIndex((index) => index + 1);
+    setRecorded(null);
   }
 
   return (
-    <div className="dash-page">
+    <div className="review-page">
       <TopNav />
+      <main className="review-body">
+        <header className="review-heading">
+          <p className="review-eyebrow">Retrieval practice</p>
+          <h1>Due for review</h1>
+          {!loading && <p>{remainingLabel}</p>}
+        </header>
 
-      <div className="dash-body">
-        {mode === "loading" && <p className="dash-empty">Loading…</p>}
+        {loading && <p className="review-empty">Opening your review notebook…</p>}
 
-        {mode === "empty" && (
-          <div className="dash-empty">
-            <p>Nothing due for review right now.</p>
-            <Link href="/dashboard" className="btn btn-primary">Back to dashboard</Link>
-          </div>
-        )}
-
-        {mode === "queue" && (
-          <>
-            <h2 className="dash-heading">Due for review</h2>
-            <p className="review-panel-note" style={{ marginTop: "-0.75rem", marginBottom: "1.5rem" }}>
-              {`${queue.length} waiting · sorted by how much you're forgetting`}
-            </p>
-            <div className="session-list">
-              {queue.map(s => {
-                const badge = urgencyBadge(s);
-                return (
-                  <div key={s.id} className={urgencyCardClass(s)}>
-                    <div className="session-info">
-                      <span className="session-subject">{s.subject}</span>
-                      <span className="session-meta">
-                        {s.level} · {s.time} min · {s.review_count}× reviewed
-                      </span>
-                      <span className={badge.cls}>{badge.label}</span>
-                      <div className="stability-bar-wrap">
-                        <div className="stability-bar-track">
-                          <div className="stability-bar-fill" style={{ width: `${stabilityPct(s.stability)}%` }} />
-                        </div>
-                        <span className="stability-label">
-                          {s.review_count > 0 ? `${Math.round(s.retrievability * 100)}% · S ${s.stability.toFixed(1)}d` : "New"}
-                        </span>
-                      </div>
-                    </div>
-                    <button className="btn btn-primary" onClick={() => token && fetchPreview(token, s.id)}>
-                      Start review →
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {mode === "active" && preview && (
-          <>
-            <h2 className="dash-heading">Reviewing: {preview.subject}</h2>
-
-            <div className="review-panel">
-              <div className="review-panel-header">
-                <span className="review-panel-label">Memory strength</span>
-                <span className="review-panel-label">FSRS-5</span>
-              </div>
-              {preview.review_count > 0 ? (
-                <>
-                  <div className="review-panel-stats">
-                    <div>
-                      <div className="review-panel-retrievability">{Math.round(preview.retrievability * 100)}%</div>
-                      <div className="review-panel-sub">Retrievability now</div>
-                    </div>
-                    <div className="review-panel-meta">
-                      Stability&nbsp; <strong>{preview.stability.toFixed(1)}d</strong><br />
-                      Difficulty&nbsp; <strong>{preview.difficulty.toFixed(1)}/10</strong><br />
-                      Reviewed&nbsp; <strong>{preview.review_count}×</strong>
-                    </div>
-                  </div>
-                  <p className="review-panel-note">{memoryNote(preview.retrievability)}</p>
-                </>
+        {!loading && recorded && (
+          <div className="review-recorded" role="status">
+            <p>{recorded.title} recorded. Next review {new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(recorded.nextReviewAt))}.</p>
+            <div className="review-complete-actions">
+              {queue[activeIndex + 1] ? (
+                <button type="button" className="btn btn-primary" onClick={showNextConcept}>Next due concept</button>
               ) : (
-                <p className="review-panel-note">First review — rate however well you recall this material right now.</p>
+                <Link href="/library" className="btn btn-primary">Back to your maps</Link>
               )}
             </div>
-
-            <details className="recap-details">
-              <summary className="recap-summary">
-                Show session recap ({preview.recommendation.techniques.length} techniques)
-              </summary>
-              <div className="recap-body">
-                <p className="modal-body" style={{ marginBottom: 0 }}>{preview.recommendation.summary}</p>
-                {preview.recommendation.techniques.map((t, i) => (
-                  <div key={i} className="technique-mini">
-                    <strong>{t.title}</strong> · {t.duration_minutes} min
-                    <p className="technique-mini-desc">{t.description}</p>
-                  </div>
-                ))}
-              </div>
-            </details>
-
-            <p className="modal-prompt">How well did you recall this material?</p>
-            <div className="review-buttons">
-              <button className="review-btn review-btn-rating-1 review-btn-tall" disabled={submitting} onClick={() => submitRating(1)}>
-                Again<span className="review-btn-sublabel">{formatIntervalDays(preview.again_days)}</span>
-              </button>
-              <button className="review-btn review-btn-rating-2 review-btn-tall" disabled={submitting} onClick={() => submitRating(2)}>
-                Hard<span className="review-btn-sublabel">{formatIntervalDays(preview.hard_days)}</span>
-              </button>
-              <button className="review-btn review-btn-rating-3 review-btn-tall" disabled={submitting} onClick={() => submitRating(3)}>
-                Good<span className="review-btn-sublabel">{formatIntervalDays(preview.good_days)}</span>
-              </button>
-              <button className="review-btn review-btn-rating-4 review-btn-tall" disabled={submitting} onClick={() => submitRating(4)}>
-                Easy<span className="review-btn-sublabel">{formatIntervalDays(preview.easy_days)}</span>
-              </button>
-            </div>
-            <button className="btn btn-ghost modal-cancel" disabled={submitting} onClick={cancelActive}>
-              Cancel
-            </button>
-          </>
-        )}
-
-        {mode === "confirmed" && confirm && preview && (
-          <div className="review-panel confirm-card">
-            <div className="confirm-check">✓</div>
-            <h2 className="dash-heading" style={{ marginBottom: "0.375rem" }}>
-              Rated &quot;{RATING_LABELS[confirm.rating]}&quot; — nice work
-            </h2>
-            <p className="review-panel-note">
-              {`${preview.subject} is now scheduled to catch you right before you'd forget again.`}
-            </p>
-            <div className="confirm-grid">
-              <div className="confirm-grid-item">
-                <div className="confirm-grid-label">Stability</div>
-                <div className="confirm-grid-value">
-                  {confirm.beforeStability.toFixed(1)}d <span className="arrow">→ {confirm.afterStability.toFixed(1)}d</span>
-                </div>
-              </div>
-              <div className="confirm-grid-item">
-                <div className="confirm-grid-label">Retrievability</div>
-                <div className="confirm-grid-value">
-                  {Math.round(confirm.beforeRetrievability * 100)}% <span className="arrow">→ 100%</span>
-                </div>
-              </div>
-            </div>
-            <button className="btn btn-ghost modal-cancel" style={{ marginTop: "1.5rem" }} onClick={backFromConfirm}>
-              {cameFromQueue && queue.length > 0 ? `Back to queue · ${queue.length} left` : "Back to dashboard"}
-            </button>
           </div>
         )}
-      </div>
+
+        {!loading && currentConcept && (
+          <article className="review-concept-card">
+            <div className="review-concept-heading">
+              <div>
+                <p className="review-parent-topic">From {currentConcept.subject}</p>
+                <h2>{currentConcept.title}</h2>
+              </div>
+              <span className="review-concept-count">{currentConcept.review_count === 0 ? "New" : `${currentConcept.review_count} reviews`}</span>
+            </div>
+            <RecallCheck
+              key={currentConcept.id}
+              concept={currentConcept}
+              onFeedback={requestFeedback}
+              onReview={requestReview}
+            />
+          </article>
+        )}
+
+        {!loading && !currentConcept && !recorded && (
+          <div className="review-empty">
+            <p>Nothing is due for review right now.</p>
+            <Link href="/library" className="btn btn-primary">Browse your maps</Link>
+          </div>
+        )}
+
+      </main>
     </div>
   );
 }

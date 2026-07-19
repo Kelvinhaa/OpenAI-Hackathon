@@ -262,6 +262,34 @@ def test_concept_constraints_reject_duplicate_keys_and_self_edges(tmp_path):
         engine.dispose()
 
 
+@pytest.mark.parametrize("last_rating", [0, 5])
+def test_concept_nodes_reject_last_ratings_outside_fsrs_range(tmp_path, last_rating):
+    engine = _sqlite_engine(tmp_path / "study-model-last-rating.db")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        study_session = _study_session()
+        session.add(study_session)
+        session.flush()
+        session.add(
+            ConceptNode(
+                study_session_id=study_session.id,
+                key="mitosis",
+                title="Mitosis",
+                explanation="Nuclear division creates matching nuclei.",
+                retrieval_prompt="What does mitosis produce?",
+                last_rating=last_rating,
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
 def test_concept_edges_cannot_cross_study_session_boundaries(tmp_path):
     engine = _sqlite_engine(tmp_path / "study-model-ownership.db")
     Base.metadata.create_all(engine)

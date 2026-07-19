@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import type { Session } from "@supabase/supabase-js";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TopNav } from "@/app/components/TopNav";
 import { MindMapprMark } from "@/app/components/MindMapprMark";
@@ -14,19 +16,40 @@ type UIState =
   | { status: "success"; data: StudyResponse }
   | { status: "error"; message: string };
 
+type AuthState = {
+  accessToken: string | null;
+  isGuestSession: boolean;
+};
+
+const retentionTrend = [
+  { label: "Day 1", value: 42 },
+  { label: "Day 3", value: 51 },
+  { label: "Week 1", value: 63 },
+  { label: "Week 2", value: 74 },
+  { label: "Month 1", value: 86 },
+];
+
+function authStateFromSession(session: Session | null): AuthState {
+  return {
+    accessToken: session?.access_token ?? null,
+    isGuestSession: Boolean(session && (!session.user.email || session.user.is_anonymous)),
+  };
+}
+
 export default function Home() {
   const [uiState, setUiState] = useState<UIState>({ status: "idle" });
   const [formError, setFormError] = useState<string>("");
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [authState, setAuthState] = useState<AuthState>({ accessToken: null, isGuestSession: false });
   const [isGuestResult, setIsGuestResult] = useState(false);
+  const { accessToken, isGuestSession } = authState;
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setAccessToken(session?.access_token ?? null);
+      setAuthState(authStateFromSession(session));
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAccessToken(session?.access_token ?? null);
+      setAuthState(authStateFromSession(session));
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -50,7 +73,8 @@ export default function Home() {
     setUiState({ status: "loading", meta });
 
     try {
-      const endpoint = accessToken
+      const isAuthenticatedUser = Boolean(accessToken && !isGuestSession);
+      const endpoint = isAuthenticatedUser
         ? `${API_BASE}/study`
         : `${API_BASE}/study/preview`;
 
@@ -58,7 +82,7 @@ export default function Home() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(isAuthenticatedUser ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
         body: JSON.stringify({ time, subject, level, goal: goal || null }),
       });
@@ -78,7 +102,7 @@ export default function Home() {
 
       const data: StudyResponse = await res.json();
       setUiState({ status: "success", data });
-      setIsGuestResult(!accessToken);
+      setIsGuestResult(!accessToken || isGuestSession);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
       setUiState({ status: "error", message });
@@ -168,7 +192,7 @@ export default function Home() {
                 Generating...
               </span>
             ) : (
-              <span>Get Recommendations</span>
+              <span>Generate study plan</span>
             )}
           </button>
         </form>
@@ -245,6 +269,12 @@ export default function Home() {
                 </ul>
               </div>
             )}
+
+            {uiState.data.id != null && (
+              <Link className="btn btn-primary learning-map-link" href={`/map/${uiState.data.id}`}>
+                Open learning map <span aria-hidden="true">→</span>
+              </Link>
+            )}
           </div>
         </section>
       )}
@@ -265,7 +295,7 @@ export default function Home() {
       )}
 
       {/* FSRS demo — only shown to visitors (no session) */}
-      {!accessToken && (
+      {(!accessToken || isGuestSession) && (
         <div className="demo-section">
           <div className="demo-divider"><span>How spaced repetition works</span></div>
 
@@ -294,6 +324,45 @@ export default function Home() {
                 <div className="demo-stat-label">Reviewed</div>
               </div>
             </div>
+
+            <section className="retention-trend" aria-labelledby="retention-title">
+              <div className="retention-trend-header">
+                <div>
+                  <p className="retention-eyebrow">How memory fades</p>
+                  <h3 id="retention-title" className="retention-title">Retention level</h3>
+                </div>
+                <div className="retention-metric">
+                  <span className="retention-metric-value">86%</span>
+                  <span className="retention-metric-label">after timely reviews</span>
+                </div>
+              </div>
+              <p className="retention-description">
+                With timely review, recall becomes more stable over time.
+              </p>
+              <div
+                className="retention-chart"
+                role="img"
+                aria-label="Illustrative retention trend after timely reviews: Day 1 42 percent, Day 3 51 percent, Week 1 63 percent, Week 2 74 percent, and Month 1 86 percent."
+              >
+                <div className="retention-chart-caption">Illustrative trend after timely reviews</div>
+                <div className="retention-bars" aria-hidden="true">
+                  {retentionTrend.map((point, index) => (
+                    <div
+                      key={point.label}
+                      className="retention-bar"
+                      style={{ "--retention-height": `${point.value}%`, "--bar-index": index } as React.CSSProperties}
+                    >
+                      <span className="retention-bar-value">{point.value}%</span>
+                      <div className="retention-bar-track">
+                        <div className="retention-bar-fill" />
+                      </div>
+                      <span className="retention-bar-label">{point.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p className="retention-disclaimer">Illustrative learning trend — not a personal prediction.</p>
+            </section>
 
             {/* Session list */}
             <div className="demo-sessions">

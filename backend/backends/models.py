@@ -53,6 +53,10 @@ class ConceptNode(Base):
     __table_args__ = (
         UniqueConstraint("study_session_id", "key", name="uq_concept_nodes_session_key"),
         UniqueConstraint("study_session_id", "id", name="uq_concept_nodes_session_id"),
+        CheckConstraint(
+            "last_rating IS NULL OR (last_rating >= 1 AND last_rating <= 4)",
+            name="ck_concept_nodes_last_rating_range",
+        ),
     )
 
     id = Column(Integer, primary_key=True)
