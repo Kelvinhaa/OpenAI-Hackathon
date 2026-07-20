@@ -6,6 +6,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { MindMapprMark } from "@/app/components/MindMapprMark";
 import { Wordmark } from "@/app/components/Wordmark";
+import type { StudyResponse } from "@/types/study";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 const TABS = [
   { href: "/", label: "Planner" },
@@ -16,23 +19,60 @@ const TABS = [
 // useLayoutEffect warns during SSR; the nav only measures in the browser.
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
-export function TopNav() {
+function mostRecentMapHref(studies: StudyResponse[]) {
+  const mostRecentStudy = studies.reduce<StudyResponse | null>((latest, study) => {
+    if (!latest) return study;
+
+    const latestCreatedAt = Date.parse(latest.created_at ?? "");
+    const studyCreatedAt = Date.parse(study.created_at ?? "");
+    return studyCreatedAt >= latestCreatedAt ? study : latest;
+  }, null);
+
+  return mostRecentStudy ? `/map/${mostRecentStudy.id}` : null;
+}
+
+export function TopNav({ planMapHref }: { planMapHref?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [latestMapHref, setLatestMapHref] = useState<string | null>(null);
   const tabsRef = useRef<HTMLElement>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
+    let active = true;
+
+    async function loadLatestMap(accessToken: string) {
+      try {
+        const response = await fetch(`${API_BASE}/study`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const studies: StudyResponse[] = response.ok ? await response.json() : [];
+        if (active) setLatestMapHref(mostRecentMapHref(studies));
+      } catch {
+        if (active) setLatestMapHref(null);
+      }
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!active) return;
       setUserEmail(session?.user?.email ?? null);
+      if (session?.access_token) void loadLatestMap(session.access_token);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserEmail(session?.user?.email ?? null);
+      if (session?.access_token) {
+        void loadLatestMap(session.access_token);
+      } else {
+        setLatestMapHref(null);
+      }
     });
-    return () => subscription.unsubscribe();
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function handleSignOut() {
@@ -45,10 +85,11 @@ export function TopNav() {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
-  const tabs = pathname.startsWith("/map/")
-    ? [...TABS, { href: pathname, label: "Plan map" }]
-    : [...TABS];
-  const activeIndex = tabs.findIndex((t) => isActive(t.href));
+  const mapHref = pathname.startsWith("/map/")
+    ? pathname
+    : planMapHref ?? latestMapHref;
+  const tabs = [...TABS, { href: mapHref, label: "Plan map" }];
+  const activeIndex = tabs.findIndex((tab) => tab.href && isActive(tab.href));
 
   // A single underline slides between tabs, so it tracks whichever tab is hovered
   // (or focused) and falls back to the active one.
@@ -95,18 +136,24 @@ export function TopNav() {
           ref={tabsRef}
           onMouseLeave={() => setHoveredIndex(null)}
         >
-          {tabs.map((t, i) => (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={`topnav-tab${i === activeIndex ? " topnav-tab--active" : ""}`}
-              aria-current={i === activeIndex ? "page" : undefined}
-              onMouseEnter={() => setHoveredIndex(i)}
-              onFocus={() => setHoveredIndex(i)}
-              onBlur={() => setHoveredIndex(null)}
-            >
-              {t.label}
-            </Link>
+          {tabs.map((tab, index) => (
+            tab.href ? (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={`topnav-tab${index === activeIndex ? " topnav-tab--active" : ""}`}
+                aria-current={index === activeIndex ? "page" : undefined}
+                onMouseEnter={() => setHoveredIndex(index)}
+                onFocus={() => setHoveredIndex(index)}
+                onBlur={() => setHoveredIndex(null)}
+              >
+                {tab.label}
+              </Link>
+            ) : (
+              <span key={tab.label} className="topnav-tab topnav-tab--disabled" aria-disabled="true" title="Create a plan to open its map">
+                {tab.label}
+              </span>
+            )
           ))}
           {indicator && (
             <span

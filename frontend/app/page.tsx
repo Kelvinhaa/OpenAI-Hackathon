@@ -147,10 +147,13 @@ export default function Home() {
   }
 
   const isLoading = uiState.status === "loading";
+  const planMapHref = uiState.status === "success" && !isGuestResult && uiState.data.id != null
+    ? `/map/${uiState.data.id}`
+    : undefined;
 
   return (
     <>
-      <TopNav />
+      <TopNav planMapHref={planMapHref} />
       <div className="container container--home">
       <header className="header">
         <p className="tagline">Discover study techniques tailored to your learning style</p>

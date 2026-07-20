@@ -8,8 +8,30 @@ test("planner presents the four study inputs", async ({ page }) => {
   await expect(page.getByLabel("Learning Goal")).toBeVisible();
 });
 
+test("planner navigation opens the most recently saved map", async ({ page }) => {
+  await page.route("**/study", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    expect(route.request().headers().authorization).toMatch(/^Bearer\s.+/);
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify([
+        { id: 4, created_at: "2026-07-17T10:00:00Z" },
+        { id: 9, created_at: "2026-07-18T10:00:00Z" },
+      ]),
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Plan map" })).toHaveAttribute("href", "/map/9");
+});
+
 test("authenticated planner hands a generated plan off to its learning map", async ({ page }) => {
   await page.route("**/study", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify([]) });
+      return;
+    }
+
     expect(route.request().method()).toBe("POST");
     await route.fulfill({
       contentType: "application/json",

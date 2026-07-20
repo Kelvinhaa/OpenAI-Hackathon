@@ -1248,6 +1248,7 @@ select {
 }
 .topnav-tab:hover { color: var(--color-graphite); }
 .topnav-tab--active { color: var(--color-graphite); }
+.topnav-tab--disabled { cursor: not-allowed; opacity: 0.48; }
 
 /* One shared underline slides between tabs; JS measures the target and sets
    transform/width. Position matches the old per-tab ::after exactly. */
