@@ -40,6 +40,7 @@ export interface StudyResponse {
   subject: string;
   level: string;
   goal: string | null;
+  exam_date?: string | null;
   recommendation: StudyRecommendation;
   created_at?: string | null;
   last_reviewed_at?: string | null;
@@ -58,6 +59,7 @@ export interface PreviewResponse {
   time: number;
   level: string;
   goal?: string | null;
+  exam_date?: string | null;
   recommendation: StudyRecommendation;
 }
 
@@ -114,6 +116,7 @@ export interface StudyFormData {
   time: number;
   level: string;
   goal: string;
+  exam_date: string;
 }
 
 export interface RetrievalFeedbackRequest {

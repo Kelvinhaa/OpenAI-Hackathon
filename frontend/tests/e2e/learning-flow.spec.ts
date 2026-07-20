@@ -80,6 +80,7 @@ test("student receives feedback then confirms a rating", async ({ page }) => {
     time: 45,
     level: "intermediate",
     goal: "Prepare for a quiz",
+    exam_date: "2026-08-01",
     recommendation: {
       summary: "Build the cell-division sequence from memory before checking it.",
       techniques: [],
@@ -163,6 +164,8 @@ test("student receives feedback then confirms a rating", async ({ page }) => {
 
   await page.goto("/map/1");
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(page.getByText("Exam-ready path")).toBeVisible();
+  await expect(page.getByText("Cell cycle").last()).toBeVisible();
   await page.getByRole("button", { name: "Mitosis" }).click();
   await page.getByLabel("Your explanation").fill("It creates two identical cells.");
   await page.getByRole("button", { name: "Check recall" }).click();
@@ -287,4 +290,69 @@ test("library opens a saved map and review shows due concepts", async ({ page })
   await page.getByRole("button", { name: "Next due concept" }).click();
   await expect(page.getByRole("heading", { name: "Cytokinesis" })).toBeVisible();
   await expect(page.getByText("What completes cell division after mitosis?")).toBeVisible();
+});
+
+test("review keeps upcoming and unscheduled concepts accessible", async ({ page }) => {
+  const study = {
+    id: 1,
+    user_id: "student-1",
+    subject: "Cell division",
+    time: 45,
+    level: "intermediate",
+    goal: "Prepare for a quiz",
+    recommendation: { summary: "Build the sequence from memory.", techniques: [], tips: [] },
+    review_count: 1,
+    interval_days: 3,
+    stability: 3,
+    concept_count: 2,
+    due_concept_count: 0,
+    concepts: [
+      {
+        id: 1,
+        key: "mitosis",
+        title: "Mitosis",
+        explanation: "Nuclear division creates matching nuclei.",
+        retrieval_prompt: "What does mitosis produce?",
+        last_reviewed_at: "2026-07-18T10:00:00Z",
+        next_review_at: "2099-07-23T10:00:00Z",
+        review_count: 1,
+        interval_days: 3,
+        stability: 3,
+        difficulty: 4.7,
+        last_rating: 3,
+      },
+      {
+        id: 2,
+        key: "cell-cycle",
+        title: "Cell cycle",
+        explanation: "The cell cycle prepares a cell to divide.",
+        retrieval_prompt: "What happens before mitosis?",
+        last_reviewed_at: null,
+        next_review_at: null,
+        review_count: 0,
+        interval_days: 1,
+        stability: 0,
+        difficulty: 5,
+        last_rating: null,
+      },
+    ],
+    edges: [],
+  };
+
+  await page.route("**/study", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify([study]) });
+  });
+  await page.route("**/study/review-queue", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify([]) });
+  });
+
+  await page.goto("/review");
+
+  await expect(page.getByRole("heading", { name: "Upcoming review" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review Mitosis early" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start first recall" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start Cell cycle" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Review Mitosis early" }).click();
+  await expect(page.getByText("What does mitosis produce?")).toBeVisible();
 });

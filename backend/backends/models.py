@@ -1,6 +1,7 @@
 from sqlalchemy import (
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -25,6 +26,7 @@ class StudySession(Base):
     subject = Column(String, nullable=False)
     level = Column(String, nullable=False)
     goal = Column(String, nullable=True)
+    exam_date = Column(Date, nullable=True)
     recommendation = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     last_reviewed_at = Column(DateTime(timezone=True), nullable=True)
@@ -94,6 +96,12 @@ class ConceptNode(Base):
 class ConceptEdge(Base):
     __tablename__ = "concept_edges"
     __table_args__ = (
+        UniqueConstraint(
+            "study_session_id",
+            "prerequisite_node_id",
+            "dependent_node_id",
+            name="uq_concept_edges_session_pair",
+        ),
         CheckConstraint(
             "prerequisite_node_id <> dependent_node_id",
             name="ck_concept_edges_not_self_referential",

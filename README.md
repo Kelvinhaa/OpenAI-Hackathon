@@ -5,6 +5,7 @@ practical study plan and a small prerequisite map. Learners can explain a
 concept in their own words, receive concise formative feedback, choose their
 own recall rating, and return when that concept is due for review.
 
+Live Webpage: https://open-ai-hackathon-rho.vercel.app/
 ## What it does
 
 - Generates a subject-specific study plan with timed techniques and tips.
@@ -44,11 +45,12 @@ Create `backend/.env` with your local values:
 
 ```dotenv
 OPENAI_API_KEY=your_openai_key
+APP_ENV=development
 DATABASE_URL=postgresql+psycopg://user:password@host:6543/postgres
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_JWT_SECRET=your_supabase_jwt_secret
 REDIS_URL=redis://default:password@host:port
-CORS_ORIGINS=http://localhost:3000
+CORS_ORIGINS=http://localhost:3004,http://127.0.0.1:3004
 ```
 
 Create `frontend/.env.local` with the public values used by the browser:
@@ -87,7 +89,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Apply outstanding database
+Open [http://localhost:3004](http://localhost:3004). Apply outstanding database
 migrations before using a fresh Postgres database:
 
 ```bash
@@ -101,6 +103,7 @@ alembic upgrade head
 | Variable | Used by | Purpose |
 | --- | --- | --- |
 | `OPENAI_API_KEY` | Backend | Generates structured plans/maps and retrieval feedback. |
+| `APP_ENV` | Backend | Set to `production` when deployed; then `REDIS_URL` is required. |
 | `DATABASE_URL` | Backend | SQLAlchemy/Postgres connection string. |
 | `SUPABASE_URL` | Backend | Supabase project URL used for authentication configuration. |
 | `SUPABASE_JWT_SECRET` | Backend | Verifies Supabase access tokens. |
@@ -110,7 +113,7 @@ alembic upgrade head
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Frontend | Browser-safe Supabase publishable key. |
 | `NEXT_PUBLIC_API_URL` | Frontend | FastAPI base URL; defaults to `http://localhost:8001`. |
 | `E2E_EMAIL` / `E2E_PASSWORD` | Playwright | Local test account for authenticated browser tests. |
-| `PLAYWRIGHT_BASE_URL` | Playwright | Optional frontend URL; defaults to `http://127.0.0.1:3000`. |
+| `PLAYWRIGHT_BASE_URL` | Playwright | Optional frontend URL; defaults to `http://127.0.0.1:3004`. |
 
 ## Demo path
 
@@ -152,9 +155,10 @@ npm run test:e2e
 ## Built with Codex and GPT-5.6
 
 Codex accelerated the frontend, FastAPI routes, database migration, automated
-tests, and project documentation. GPT-5.6 is used through the OpenAI Responses
-API with structured Pydantic outputs to create the study plan and learning map,
-and to provide bounded formative feedback on retrieval-practice answers.
+tests, and project documentation. GPT-5.6 Luna is used through the OpenAI
+Responses API with low reasoning effort and structured Pydantic outputs to
+create the study plan and learning map, and to provide bounded formative
+feedback on retrieval-practice answers.
 
 The learner remains in control of the rating: the model can suggest a rating,
 but only the learner's selected `Again`, `Hard`, `Good`, or `Easy` rating updates

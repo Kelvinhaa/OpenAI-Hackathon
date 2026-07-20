@@ -1,7 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import or_
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
 from backends.database import get_db
@@ -39,19 +38,35 @@ def _parse_user_id(user_id: str | uuid.UUID) -> uuid.UUID:
         ) from exc
 
 
-def _owned_concept_or_404(
-    db: Session, concept_id: int, user_id: str | uuid.UUID
-) -> ConceptNode:
+def _owned_concept_query(
+    db: Session,
+    concept_id: int,
+    user_id: str | uuid.UUID,
+    *,
+    lock_for_update: bool = False,
+):
     parsed_user_id = _parse_user_id(user_id)
-    concept = (
+    query = (
         db.query(ConceptNode)
         .join(StudySession, ConceptNode.study_session_id == StudySession.id)
         .filter(
             ConceptNode.id == concept_id,
             StudySession.user_id == parsed_user_id,
         )
-        .first()
     )
+    return query.with_for_update() if lock_for_update else query
+
+
+def _owned_concept_or_404(
+    db: Session,
+    concept_id: int,
+    user_id: str | uuid.UUID,
+    *,
+    lock_for_update: bool = False,
+) -> ConceptNode:
+    concept = _owned_concept_query(
+        db, concept_id, user_id, lock_for_update=lock_for_update
+    ).first()
     if concept is None:
         raise HTTPException(status_code=404, detail="Concept not found")
     return concept
@@ -79,6 +94,37 @@ def _study_response(session: StudySession, db: Session) -> StudyResponse:
         )
         .count()
     )
+    if concepts:
+        scheduled_concepts = [
+            concept for concept in concepts if concept.next_review_at is not None
+        ]
+        next_review_concept = min(
+            scheduled_concepts,
+            key=lambda concept: concept.next_review_at,
+            default=None,
+        )
+        reviewed_concepts = [
+            concept for concept in concepts if concept.last_reviewed_at is not None
+        ]
+        last_reviewed_at = max(
+            (concept.last_reviewed_at for concept in reviewed_concepts),
+            default=None,
+        )
+        next_review_at = (
+            next_review_concept.next_review_at if next_review_concept is not None else None
+        )
+        review_count = sum(concept.review_count for concept in concepts)
+        interval_days = (
+            next_review_concept.interval_days if next_review_concept is not None else 1
+        )
+        stability = sum(concept.stability for concept in concepts) / len(concepts)
+    else:
+        last_reviewed_at = session.last_reviewed_at
+        next_review_at = session.next_review_at
+        review_count = session.review_count
+        interval_days = session.interval_days
+        stability = session.stability
+
     return StudyResponse(
         id=session.id,
         user_id=session.user_id,
@@ -86,13 +132,14 @@ def _study_response(session: StudySession, db: Session) -> StudyResponse:
         subject=session.subject,
         level=session.level,
         goal=session.goal,
+        exam_date=session.exam_date,
         recommendation=session.recommendation,
         created_at=session.created_at,
-        last_reviewed_at=session.last_reviewed_at,
-        next_review_at=session.next_review_at,
-        review_count=session.review_count,
-        interval_days=session.interval_days,
-        stability=session.stability,
+        last_reviewed_at=last_reviewed_at,
+        next_review_at=next_review_at,
+        review_count=review_count,
+        interval_days=interval_days,
+        stability=stability,
         concept_count=len(concepts),
         due_concept_count=due_concept_count,
         concepts=concepts,
@@ -124,6 +171,7 @@ async def create_study(
             level=payload.level,
             time=payload.time,
             goal=payload.goal,
+            exam_date=payload.exam_date,
         )
     except LearningExperienceGenerationError:
         raise HTTPException(
@@ -145,6 +193,7 @@ async def create_study(
             subject=payload.subject,
             level=payload.level,
             goal=payload.goal,
+            exam_date=payload.exam_date,
             recommendation=recommendation.model_dump(),
         )
         db.add(session)
@@ -193,12 +242,14 @@ async def preview_study(
         level=body.level,
         time=body.time,
         goal=body.goal,
+        exam_date=body.exam_date,
     )
     return PreviewResponse(
         subject=body.subject,
         time=body.time,
         level=body.level,
         goal=body.goal,
+        exam_date=body.exam_date,
         recommendation=recommendation,
     )
 
@@ -303,7 +354,7 @@ def review_concept(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    concept = _owned_concept_or_404(db, concept_id, user_id)
+    concept = _owned_concept_or_404(db, concept_id, user_id, lock_for_update=True)
     now = datetime.now(timezone.utc)
     last_reviewed_at = concept.last_reviewed_at
     if last_reviewed_at is not None and last_reviewed_at.tzinfo is None:
@@ -395,22 +446,28 @@ def get_stats(
 
     total = db.query(StudySession).filter(StudySession.user_id == parsed_user_id).count()
     due_today = (
-        db.query(StudySession)
-        .filter(StudySession.user_id == parsed_user_id)
-        .filter(or_(
-            StudySession.next_review_at <= now,
-            StudySession.next_review_at == None,
-        ))
+        db.query(ConceptNode)
+        .join(StudySession, ConceptNode.study_session_id == StudySession.id)
+        .filter(
+            StudySession.user_id == parsed_user_id,
+            ConceptNode.next_review_at.is_not(None),
+            ConceptNode.next_review_at <= now,
+        )
         .count()
     )
     reviewed_today = (
-        db.query(StudySession)
-        .filter(StudySession.user_id == parsed_user_id)
-        .filter(StudySession.last_reviewed_at >= today_start)
+        db.query(ConceptReviewEvent)
+        .join(ConceptNode, ConceptReviewEvent.concept_node_id == ConceptNode.id)
+        .join(StudySession, ConceptNode.study_session_id == StudySession.id)
+        .filter(
+            StudySession.user_id == parsed_user_id,
+            ConceptReviewEvent.reviewed_at >= today_start,
+        )
         .count()
     )
     avg_s = (
-        db.query(sqlfunc.avg(StudySession.stability))
+        db.query(sqlfunc.avg(ConceptNode.stability))
+        .join(StudySession, ConceptNode.study_session_id == StudySession.id)
         .filter(StudySession.user_id == parsed_user_id)
         .scalar()
     )
@@ -451,7 +508,7 @@ def review_session(
     session = db.query(StudySession).filter(
         StudySession.id == session_id,
         StudySession.user_id == parsed_user_id,
-    ).first()
+    ).with_for_update().first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 

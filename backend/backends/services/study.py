@@ -1,6 +1,6 @@
 import math
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from openai import AsyncOpenAI
 from typing import Optional, Sequence
 from backends.schemas.study import (
@@ -117,15 +117,20 @@ def _fallback_recommendation(subject: str, time: int, level: str) -> StudyRecomm
 
 
 async def generate_recommendation(
-    subject: str, level: str, time: int, goal: Optional[str] = None
+    subject: str,
+    level: str,
+    time: int,
+    goal: Optional[str] = None,
+    exam_date: Optional[date] = None,
 ) -> StudyRecommendation:
     goal_line = f"\n- Learning goal: {goal}" if goal else ""
+    exam_date_line = f"\n- Exam date: {exam_date.isoformat()}" if exam_date else ""
 
     user_message = (
         "Create a study plan for:\n"
         f"- Subject: {subject}\n"
         f"- Level: {level}\n"
-        f"- Duration: {time} minutes{goal_line}"
+        f"- Duration: {time} minutes{goal_line}{exam_date_line}"
     )
 
     try:
@@ -134,7 +139,7 @@ async def generate_recommendation(
             instructions=SYSTEM_PROMPT,
             input=user_message,
             text_format=StudyRecommendation,
-            reasoning={"effort": "low"}
+            reasoning={"effort": "low"},
         )
 
         recommendation = response.output_parsed
@@ -152,14 +157,19 @@ async def generate_recommendation(
 
 
 async def generate_learning_experience(
-    subject: str, level: str, time: int, goal: Optional[str] = None
+    subject: str,
+    level: str,
+    time: int,
+    goal: Optional[str] = None,
+    exam_date: Optional[date] = None,
 ) -> GeneratedLearningExperience:
     goal_line = f"\n- Learning goal: {goal}" if goal else ""
+    exam_date_line = f"\n- Exam date: {exam_date.isoformat()}" if exam_date else ""
     user_message = (
         "Create a complete study plan and learning map for:\n"
         f"- Subject: {subject}\n"
         f"- Level: {level}\n"
-        f"- Duration: {time} minutes{goal_line}"
+        f"- Duration: {time} minutes{goal_line}{exam_date_line}"
     )
 
     try:
@@ -168,6 +178,7 @@ async def generate_learning_experience(
             instructions=LEARNING_MAP_SYSTEM_PROMPT,
             input=user_message,
             text_format=GeneratedLearningExperience,
+            reasoning={"effort": "low"},
         )
         experience = response.output_parsed
     except Exception as exc:
@@ -201,6 +212,7 @@ async def evaluate_retrieval_answer(
             instructions=RETRIEVAL_FEEDBACK_SYSTEM_PROMPT,
             input=user_message,
             text_format=RetrievalFeedbackResponse,
+            reasoning={"effort": "low"},
         )
         feedback = RetrievalFeedbackResponse.model_validate(response.output_parsed)
     except Exception as exc:

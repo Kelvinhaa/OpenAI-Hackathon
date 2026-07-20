@@ -13,7 +13,7 @@
 - Target school and university students through a responsive web app.
 - Sign-in is mandatory; every study session, concept, edge, and review event is owner-scoped.
 - Planner inputs are topic, duration in minutes, level, and optional goal. Do not add uploads or PDFs.
-- Use `gpt-5.6` through the Responses API structured-output interface; keep `OPENAI_API_KEY` server-side only.
+- Use `gpt-5.6-luna` through the Responses API structured-output interface with `reasoning={"effort": "low"}`; keep `OPENAI_API_KEY` server-side only.
 - The first generation request must return the complete study plan and 4–6 concept map; do not persist partial output.
 - The student, not the model, confirms the FSRS rating (`Again`, `Hard`, `Good`, `Easy`).
 - Use the user-authorized OpenAI Hackathon MindMappr name and the warm-paper, Newsreader/IBM Plex Mono visual direction.
@@ -303,7 +303,8 @@ Replace `anthropic` with `openai` in `backend/requirements.txt`; replace `ANTHRO
 ```python
 client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 response = await client.responses.parse(
-    model="gpt-5.6",
+    model="gpt-5.6-luna",
+    reasoning={"effort": "low"},
     input=[
         {"role": "system", "content": LEARNING_MAP_SYSTEM_PROMPT},
         {"role": "user", "content": user_message},

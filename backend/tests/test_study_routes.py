@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from backends.auth import get_current_user_id
 from backends.main import app
@@ -57,7 +58,7 @@ def generated_learning_experience() -> GeneratedLearningExperience:
 
 
 def test_create_study_persists_and_returns_learning_map(
-    client, monkeypatch, generated_learning_experience
+    client, db_session, monkeypatch, generated_learning_experience
 ):
     async def fake_generate_learning_experience(**_kwargs):
         return generated_learning_experience
@@ -73,6 +74,7 @@ def test_create_study_persists_and_returns_learning_map(
             "time": 45,
             "level": "intermediate",
             "goal": "Prepare for a quiz",
+            "exam_date": "2026-08-01",
         },
     )
 
@@ -82,6 +84,9 @@ def test_create_study_persists_and_returns_learning_map(
     assert len(body["edges"]) == 3
     assert body["concept_count"] == 4
     assert body["due_concept_count"] == 0
+    assert body["exam_date"] == "2026-08-01"
+    persisted = db_session.query(StudySession).one()
+    assert persisted.exam_date.isoformat() == "2026-08-01"
     assert body["concepts"][0]["key"] == "cell-cycle"
     assert body["concepts"][0]["retrieval_prompt"]
     assert set(body["concepts"][0]) == {
@@ -215,7 +220,17 @@ def test_study_responses_include_per_map_concept_counts_and_order_related_record
     ]
     db_session.add_all(nodes)
     db_session.flush()
-    nodes[0].next_review_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    now = datetime.now(timezone.utc)
+    nodes[0].next_review_at = now + timedelta(days=3)
+    nodes[0].last_reviewed_at = now
+    nodes[0].review_count = 3
+    nodes[0].interval_days = 3
+    nodes[0].stability = 5.0
+    nodes[1].next_review_at = now - timedelta(minutes=1)
+    nodes[1].last_reviewed_at = now - timedelta(days=1)
+    nodes[1].review_count = 2
+    nodes[1].interval_days = 1
+    nodes[1].stability = 1.0
     db_session.add(
         ConceptEdge(
             id=2,
@@ -240,8 +255,15 @@ def test_study_responses_include_per_map_concept_counts_and_order_related_record
 
     assert listed[0].concept_count == 2
     assert listed[0].due_concept_count == 1
+    assert listed[0].review_count == 5
+    assert listed[0].stability == 3.0
+    assert listed[0].interval_days == 1
+    assert listed[0].last_reviewed_at.replace(tzinfo=timezone.utc) == now
+    assert listed[0].next_review_at.replace(tzinfo=timezone.utc) == now - timedelta(minutes=1)
     assert fetched.concept_count == 2
     assert fetched.due_concept_count == 1
+    assert fetched.review_count == 5
+    assert fetched.stability == 3.0
     assert [concept.id for concept in StudyResponse.model_validate(listed[0]).concepts] == [1, 2]
     assert [edge.id for edge in StudyResponse.model_validate(listed[0]).edges] == [1, 2]
     assert [concept.id for concept in StudyResponse.model_validate(fetched).concepts] == [1, 2]
@@ -396,6 +418,20 @@ def test_review_rejects_a_concept_owned_by_another_user(client, db_session, monk
     assert response.status_code == 404
 
 
+def test_review_locks_the_owned_concept_row_before_updating(db_session):
+    concept = _concept_for_user(db_session, uuid.UUID(TEST_USER_ID))
+
+    query = study_router._owned_concept_query(
+        db_session,
+        concept.id,
+        TEST_USER_ID,
+        lock_for_update=True,
+    )
+
+    compiled = str(query.statement.compile(dialect=postgresql.dialect()))
+    assert "FOR UPDATE" in compiled
+
+
 def test_review_updates_owned_concept_and_creates_an_event(client, db_session, monkeypatch):
     concept = _concept_for_user(db_session, uuid.UUID(TEST_USER_ID))
 
@@ -446,3 +482,60 @@ def test_review_queue_returns_only_due_concepts_for_the_current_user(client, db_
     assert [item["id"] for item in response.json()] == [due.id]
     assert response.json()[0]["retrieval_prompt"] == "Why does mitosis create identical cells?"
     assert response.json()[0]["subject"] == "Cell division"
+
+
+def test_stats_are_derived_from_owned_concepts_and_review_events(client, db_session):
+    now = datetime.now(timezone.utc)
+    due = _concept_for_user(
+        db_session,
+        uuid.UUID(TEST_USER_ID),
+        key="mitosis-due",
+        next_review_at=now - timedelta(minutes=1),
+    )
+    upcoming = _concept_for_user(
+        db_session,
+        uuid.UUID(TEST_USER_ID),
+        key="mitosis-upcoming",
+        next_review_at=now + timedelta(days=1),
+    )
+    new = _concept_for_user(db_session, uuid.UUID(TEST_USER_ID), key="mitosis-new")
+    other_user = _concept_for_user(
+        db_session,
+        uuid.uuid4(),
+        key="mitosis-other-user",
+        next_review_at=now - timedelta(minutes=1),
+    )
+    due.stability = 2.0
+    upcoming.stability = 5.0
+    new.stability = 8.0
+    other_user.stability = 99.0
+    db_session.add_all(
+        [
+            ConceptReviewEvent(
+                concept_node_id=due.id,
+                rating=3,
+                reviewed_at=now,
+            ),
+            ConceptReviewEvent(
+                concept_node_id=upcoming.id,
+                rating=3,
+                reviewed_at=now - timedelta(days=1),
+            ),
+            ConceptReviewEvent(
+                concept_node_id=other_user.id,
+                rating=3,
+                reviewed_at=now,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get("/study/stats")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "total_sessions": 3,
+        "due_today": 1,
+        "reviewed_today": 1,
+        "avg_stability": 5.0,
+    }

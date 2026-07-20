@@ -1,18 +1,22 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from pydantic import ValidationError
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from backends.database import Base
 from backends.models import ConceptEdge, ConceptNode, ConceptReviewEvent, StudySession
-from backends.schemas.study import ConceptNodeResponse, GeneratedLearningExperience
+from backends.schemas.study import (
+    ConceptNodeResponse,
+    GeneratedLearningExperience,
+    StudyRequest,
+)
 
 
 def _experience_payload() -> dict:
@@ -85,6 +89,60 @@ def test_generated_experience_accepts_valid_unique_concepts_and_edges():
     ]
 
 
+def test_study_request_normalizes_text_fields():
+    request = StudyRequest(
+        time=60,
+        subject="  Cell division  ",
+        level="intermediate",
+        goal="  Prepare for a quiz  ",
+    )
+
+    assert request.subject == "Cell division"
+    assert request.goal == "Prepare for a quiz"
+
+
+def test_study_request_accepts_a_future_exam_date():
+    exam_date = date.today() + timedelta(days=7)
+
+    request = StudyRequest(
+        time=60,
+        subject="Cell division",
+        level="intermediate",
+        exam_date=exam_date,
+    )
+
+    assert request.exam_date == exam_date
+
+
+def test_study_request_rejects_a_past_exam_date():
+    with pytest.raises(ValidationError, match="today or later"):
+        StudyRequest(
+            time=60,
+            subject="Cell division",
+            level="intermediate",
+            exam_date=date.today() - timedelta(days=1),
+        )
+
+
+@pytest.mark.parametrize(
+    "payload, error_message",
+    [
+        ({"time": 4, "subject": "Biology", "level": "beginner"}, "greater than or equal"),
+        ({"time": 481, "subject": "Biology", "level": "beginner"}, "less than or equal"),
+        ({"time": 60, "subject": " ", "level": "beginner"}, "must not be blank"),
+        ({"time": 60, "subject": "x" * 201, "level": "beginner"}, "at most 200"),
+        ({"time": 60, "subject": "Biology", "level": "expert"}, "Input should be"),
+        (
+            {"time": 60, "subject": "Biology", "level": "beginner", "goal": "x" * 501},
+            "at most 500",
+        ),
+    ],
+)
+def test_study_request_rejects_unbounded_or_invalid_input(payload, error_message):
+    with pytest.raises(ValidationError, match=error_message):
+        StudyRequest.model_validate(payload)
+
+
 def test_generated_experience_rejects_duplicate_concept_keys():
     payload = _experience_payload()
     payload["concepts"][3]["key"] = "mitosis"
@@ -132,6 +190,26 @@ def test_generated_experience_rejects_self_referential_edges():
     }
     with pytest.raises(ValidationError, match="itself"):
         GeneratedLearningExperience.model_validate(self_edge_payload)
+
+
+def test_generated_experience_rejects_duplicate_edges():
+    payload = _experience_payload()
+    payload["edges"].append(
+        {"prerequisite_key": "cell-cycle", "dependent_key": "mitosis"}
+    )
+
+    with pytest.raises(ValidationError, match="duplicate"):
+        GeneratedLearningExperience.model_validate(payload)
+
+
+def test_generated_experience_rejects_cyclic_edges():
+    payload = _experience_payload()
+    payload["edges"].append(
+        {"prerequisite_key": "cytokinesis", "dependent_key": "cell-cycle"}
+    )
+
+    with pytest.raises(ValidationError, match="cycle"):
+        GeneratedLearningExperience.model_validate(payload)
 
 
 @pytest.mark.parametrize("field", ["key", "title", "explanation", "retrieval_prompt"])
@@ -218,7 +296,7 @@ def test_concept_nodes_belong_to_one_study_session_and_keep_fsrs_state(tmp_path)
         engine.dispose()
 
 
-def test_concept_constraints_reject_duplicate_keys_and_self_edges(tmp_path):
+def test_concept_constraints_reject_duplicate_keys_edges_and_self_edges(tmp_path):
     engine = _sqlite_engine(tmp_path / "study-model-constraints.db")
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
@@ -248,12 +326,40 @@ def test_concept_constraints_reject_duplicate_keys_and_self_edges(tmp_path):
             session.commit()
         session.rollback()
 
+        second = ConceptNode(
+            study_session_id=study_session.id,
+            key="cytokinesis",
+            title="Cytokinesis",
+            explanation="Cell contents divide after nuclear division.",
+            retrieval_prompt="When does cytokinesis occur?",
+        )
+        session.add(second)
+        session.commit()
+
         edge = ConceptEdge(
             study_session_id=study_session.id,
             prerequisite_node_id=first.id,
             dependent_node_id=first.id,
         )
         session.add(edge)
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+
+        valid_edge = ConceptEdge(
+            study_session_id=study_session.id,
+            prerequisite_node_id=first.id,
+            dependent_node_id=second.id,
+        )
+        session.add(valid_edge)
+        session.commit()
+
+        duplicate_edge = ConceptEdge(
+            study_session_id=study_session.id,
+            prerequisite_node_id=first.id,
+            dependent_node_id=second.id,
+        )
+        session.add(duplicate_edge)
         with pytest.raises(IntegrityError):
             session.commit()
     finally:
@@ -408,3 +514,78 @@ def test_alembic_migration_chain_reaches_learning_map_head(tmp_path, monkeypatch
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     command.upgrade(config, "head")
+
+
+def test_edge_constraint_migration_deduplicates_existing_rows(tmp_path, monkeypatch):
+    database_path = tmp_path / "edge-constraint-migration.db"
+    backend_path = Path(__file__).resolve().parents[1]
+    database_url = f"sqlite:///{database_path}"
+    config = Config(str(backend_path / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    command.upgrade(config, "20260718_01")
+    engine = _sqlite_engine(database_path)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO study_sessions (
+                        id, user_id, time, subject, level, recommendation,
+                        created_at, review_count, ease_factor, interval_days, stability
+                    ) VALUES (
+                        1, :user_id, 30, 'Biology', 'Beginner', :recommendation,
+                        CURRENT_TIMESTAMP, 0, 2.5, 1, 0
+                    )
+                    """
+                ),
+                {
+                    "user_id": str(uuid.uuid4()),
+                    "recommendation": '{"summary":"Plan","techniques":[],"tips":[]}',
+                },
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO concept_nodes (
+                        id, study_session_id, key, title, explanation, retrieval_prompt,
+                        review_count, interval_days, stability, difficulty
+                    ) VALUES
+                        (1, 1, 'cell-cycle', 'Cell cycle', 'Cell stages.', 'List the stages.', 0, 1, 0, 0),
+                        (2, 1, 'mitosis', 'Mitosis', 'Nuclear division.', 'What does it produce?', 0, 1, 0, 0)
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO concept_edges (
+                        id, study_session_id, prerequisite_node_id, dependent_node_id
+                    ) VALUES
+                        (1, 1, 1, 2),
+                        (2, 1, 1, 2)
+                    """
+                )
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(config, "head")
+    engine = _sqlite_engine(database_path)
+    session = sessionmaker(bind=engine)()
+    try:
+        assert session.query(ConceptEdge).count() == 1
+        remaining_edge = session.query(ConceptEdge).one()
+        session.add(
+            ConceptEdge(
+                study_session_id=remaining_edge.study_session_id,
+                prerequisite_node_id=remaining_edge.prerequisite_node_id,
+                dependent_node_id=remaining_edge.dependent_node_id,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+    finally:
+        session.close()
+        engine.dispose()

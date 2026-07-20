@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Use `OPENAI_API_KEY` server-side only; do not read or commit local `.env` files.
-- Use the OpenAI Responses API with model `gpt-5.6` and typed structured outputs.
+- Use the OpenAI Responses API with model `gpt-5.6-luna`, `reasoning={"effort": "low"}`, and typed structured outputs.
 - All persisted study data remains constrained to the authenticated user.
 - Generated maps contain 4–6 unique concepts and prerequisite-to-dependent edges.
 - FSRS state belongs to a concept, not a parent study session.
@@ -82,4 +82,3 @@
 
 - `cd backend && pytest tests -q`
 - `cd frontend && npm run lint && npm run build`
-

@@ -93,13 +93,14 @@ export default function Home() {
     const subject = (form.elements.namedItem("subject") as HTMLInputElement).value.trim();
     const time = parseInt((form.elements.namedItem("time") as HTMLInputElement).value, 10);
     const goal = (form.elements.namedItem("goal") as HTMLInputElement).value.trim() || "";
+    const examDate = (form.elements.namedItem("exam_date") as HTMLInputElement).value;
 
     if (!subject || !time || !level) {
       setFormError("Please fill in all required fields.");
       return;
     }
 
-    const meta: StudyFormData = { subject, time, level, goal };
+    const meta: StudyFormData = { subject, time, level, goal, exam_date: examDate };
     setUiState({ status: "loading", meta });
 
     try {
@@ -114,7 +115,13 @@ export default function Home() {
           "Content-Type": "application/json",
           ...(isAuthenticatedUser ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
-        body: JSON.stringify({ time, subject, level, goal: goal || null }),
+        body: JSON.stringify({
+          time,
+          subject,
+          level,
+          goal: goal || null,
+          exam_date: examDate || null,
+        }),
       });
 
       if (!res.ok) {
@@ -214,6 +221,14 @@ export default function Home() {
             />
           </div>
 
+          <div className="form-group">
+            <label htmlFor="exam_date">
+              Exam date <span className="optional-badge">Optional</span>
+            </label>
+            <input id="exam_date" name="exam_date" type="date" min={new Date().toISOString().slice(0, 10)} />
+            <span className="form-hint">We&apos;ll turn your map into a paced path to the exam.</span>
+          </div>
+
           {formError && <div className="form-error">{formError}</div>}
 
           <button type="submit" className="btn btn-primary" disabled={isLoading}>
@@ -247,6 +262,7 @@ export default function Home() {
             <span>⏱️ {uiState.meta.time} min</span>
             <span>📊 {uiState.meta.level}</span>
             {uiState.meta.goal && <span>🎯 {uiState.meta.goal}</span>}
+            {uiState.meta.exam_date && <span>🗓️ Exam {uiState.meta.exam_date}</span>}
           </div>
           <div className="skeleton-container">
             <div className="skeleton-block skeleton-summary" />
@@ -269,6 +285,7 @@ export default function Home() {
               <span>⏱️ {uiState.data.time} min</span>
               <span>📊 {uiState.data.level}</span>
               {uiState.data.goal && <span>🎯 {uiState.data.goal}</span>}
+              {uiState.data.exam_date && <span>🗓️ Exam {uiState.data.exam_date}</span>}
             </div>
 
             <div className="result-summary">

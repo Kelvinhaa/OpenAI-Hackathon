@@ -1,7 +1,8 @@
 import os
+import logging
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 
 load_dotenv()
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,7 @@ from backends.dependencies import limiter
 from backends.routers.study import router as study_router
 
 app = FastAPI(title="Mindmappr", redirect_slashes=False)
+logger = logging.getLogger(__name__)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -67,8 +69,12 @@ def db_test():
     try:
         test_db_connection()
         return {"status": "ok", "database": "connected"}
-    except Exception as exc:
-        return {"status": "error", "database": str(exc)}
+    except Exception:
+        logger.exception("Database diagnostic failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable",
+        )
 
 
 

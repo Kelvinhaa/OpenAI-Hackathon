@@ -1,15 +1,41 @@
 import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from typing import Optional, List
+from typing import List, Literal, Optional
 
 
 class StudyRequest(BaseModel):
-    time: int = Field(gt=0, description="Study duration in minutes")
-    subject: str
-    level: str
-    goal: Optional[str] = Field(default=None, description="Optional learning goal")
+    time: int = Field(
+        ge=5, le=480, description="Study duration in minutes (between 5 and 480)"
+    )
+    subject: str = Field(min_length=1, max_length=200)
+    level: Literal["beginner", "intermediate", "advanced"]
+    goal: Optional[str] = Field(default=None, max_length=500, description="Optional learning goal")
+    exam_date: Optional[date] = Field(default=None, description="Optional exam date")
+
+    @field_validator("subject")
+    @classmethod
+    def normalize_subject(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("subject must not be blank")
+        return normalized
+
+    @field_validator("goal")
+    @classmethod
+    def normalize_goal(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("exam_date")
+    @classmethod
+    def require_today_or_future_exam_date(cls, value: Optional[date]) -> Optional[date]:
+        if value is not None and value < date.today():
+            raise ValueError("exam date must be today or later")
+        return value
 
 
 class Technique(BaseModel):
@@ -76,6 +102,8 @@ class GeneratedLearningExperience(StudyRecommendation):
         if len(concept_key_set) != len(concept_keys):
             raise ValueError("concept keys must be unique")
 
+        edge_pairs: set[tuple[str, str]] = set()
+        adjacency: dict[str, list[str]] = {key: [] for key in concept_key_set}
         for edge in self.edges:
             if edge.prerequisite_key == edge.dependent_key:
                 raise ValueError("a concept cannot be a prerequisite of itself")
@@ -83,6 +111,30 @@ class GeneratedLearningExperience(StudyRecommendation):
                 raise ValueError("edge prerequisite references an unknown concept")
             if edge.dependent_key not in concept_key_set:
                 raise ValueError("edge dependent references an unknown concept")
+            pair = (edge.prerequisite_key, edge.dependent_key)
+            if pair in edge_pairs:
+                raise ValueError("learning maps cannot contain duplicate edges")
+            edge_pairs.add(pair)
+            adjacency[edge.prerequisite_key].append(edge.dependent_key)
+
+        visited: set[str] = set()
+        visiting: set[str] = set()
+
+        def contains_cycle(key: str) -> bool:
+            if key in visiting:
+                return True
+            if key in visited:
+                return False
+
+            visiting.add(key)
+            if any(contains_cycle(neighbor) for neighbor in adjacency[key]):
+                return True
+            visiting.remove(key)
+            visited.add(key)
+            return False
+
+        if any(contains_cycle(key) for key in concept_key_set):
+            raise ValueError("learning maps cannot contain prerequisite cycles")
 
         return self
 
@@ -193,6 +245,7 @@ class StudyResponse(BaseModel):
     subject: str
     level: str
     goal: Optional[str] = None
+    exam_date: Optional[date] = None
     recommendation: StudyRecommendation
     created_at: Optional[datetime] = None
     last_reviewed_at: Optional[datetime] = None
@@ -211,6 +264,7 @@ class PreviewResponse(BaseModel):
     time: int
     level: str
     goal: Optional[str] = None
+    exam_date: Optional[date] = None
     recommendation: StudyRecommendation
 
 

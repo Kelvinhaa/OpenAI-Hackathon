@@ -62,7 +62,7 @@ async def test_generate_recommendation_uses_openai_structured_output(monkeypatch
 
     assert result == expected
     mock_client.responses.parse.assert_awaited_once_with(
-        model="gpt-5.6",
+        model="gpt-5.6-luna",
         instructions=study.SYSTEM_PROMPT,
         input=(
             "Create a study plan for:\n"
@@ -72,6 +72,7 @@ async def test_generate_recommendation_uses_openai_structured_output(monkeypatch
             "- Learning goal: solve force problems"
         ),
         text_format=StudyRecommendation,
+        reasoning={"effort": "low"},
     )
 
 
@@ -159,7 +160,7 @@ async def test_generate_learning_experience_uses_openai_typed_output(monkeypatch
 
     assert result == expected
     mock_client.responses.parse.assert_awaited_once_with(
-        model="gpt-5.6",
+        model="gpt-5.6-luna",
         instructions=study.LEARNING_MAP_SYSTEM_PROMPT,
         input=(
             "Create a complete study plan and learning map for:\n"
@@ -169,6 +170,7 @@ async def test_generate_learning_experience_uses_openai_typed_output(monkeypatch
             "- Learning goal: solve force problems"
         ),
         text_format=GeneratedLearningExperience,
+        reasoning={"effort": "low"},
     )
 
 
@@ -222,6 +224,7 @@ async def test_evaluate_retrieval_answer_uses_bounded_structured_feedback(monkey
 
     assert result == expected
     parse_call = mock_client.responses.parse.await_args.kwargs
-    assert parse_call["model"] == "gpt-5.6"
+    assert parse_call["model"] == "gpt-5.6-luna"
+    assert parse_call["reasoning"] == {"effort": "low"}
     assert "two sentences" in parse_call["instructions"]
     assert "chromosomes, cell-cycle" in parse_call["input"]

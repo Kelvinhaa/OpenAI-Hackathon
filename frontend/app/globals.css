@@ -252,7 +252,8 @@ input, select {
   font-family: var(--font-body);
 }
 input:hover, select:hover { border-color: #c0c0c0; }
-input:focus, select:focus { border-color: var(--color-graphite); box-shadow: 0 0 0 3px rgba(36, 36, 36, 0.06); }
+input:focus, select:focus { border-color: var(--input); box-shadow: none; }
+input:focus-visible, select:focus-visible { outline: none; }
 input::placeholder { color: var(--color-stone); }
 
 select {
@@ -277,7 +278,7 @@ select {
 .select-trigger:disabled { color: var(--foreground); opacity: 1; }
 .select-trigger:hover:not(:disabled) { border-color: #c0c0c0; }
 .select-trigger[aria-expanded="true"] {
-  border-color: var(--color-graphite); box-shadow: 0 0 0 3px rgba(36, 36, 36, 0.06);
+  border-color: var(--input); box-shadow: none;
 }
 
 .select-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -778,6 +779,56 @@ select {
 .map-facts div { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
 .map-facts dt { color: #8d7253; font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .map-facts dd { color: #33403a; font-size: 0.89rem; font-weight: 600; }
+
+.exam-readiness {
+  margin-top: 1.8rem;
+  padding-top: 1rem;
+  border-top: 1px solid #d8cdbb;
+}
+
+.exam-readiness-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.exam-readiness-heading .map-eyebrow { margin-bottom: 0.35rem; }
+.exam-readiness h2 { font-size: 1.2rem; }
+.exam-readiness-heading > span { color: #9b6338; font-family: var(--font-mono); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap; }
+.exam-readiness > p { margin-top: 0.55rem; color: #665e52; font-size: 0.77rem; line-height: 1.48; }
+
+.exam-readiness-steps {
+  display: grid;
+  gap: 0.32rem;
+  margin-top: 0.9rem;
+  padding: 0;
+  list-style: none;
+}
+
+.exam-readiness-step {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.45rem 0.42rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #33403a;
+  cursor: pointer;
+  text-align: left;
+}
+
+.exam-readiness-step:hover,
+.exam-readiness-step--selected { border-color: #d6b087; background: #fff9ee; }
+.exam-readiness-step:focus-visible { outline: 2px solid #e87832; outline-offset: 2px; }
+.exam-readiness-step-number { display: grid; width: 1.45rem; height: 1.45rem; place-items: center; border: 1px solid #c69466; border-radius: 50%; color: #9b6338; font-family: var(--font-mono); font-size: 0.66rem; font-weight: 700; }
+.exam-readiness-step--selected .exam-readiness-step-number { border-color: #e87832; background: #e87832; color: #fffdf8; }
+.exam-readiness-step > span:last-child { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; min-width: 0; }
+.exam-readiness-step strong { overflow: hidden; font-size: 0.77rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.exam-readiness-step small { flex: 0 0 auto; color: #9b6338; font-family: var(--font-mono); font-size: 0.59rem; letter-spacing: 0.03em; text-transform: uppercase; }
 
 .map-legend {
   margin-top: 2rem;
@@ -1471,6 +1522,22 @@ select {
 .review-empty { display: grid; justify-items: start; gap: 1rem; margin-top: 1.25rem; padding: 1.5rem; border: 1px dashed #cdbfa9; color: #746959; font-family: var(--font-heading); font-style: italic; }
 .review-empty .btn { width: auto; margin-top: 0; font-family: var(--font-body); font-style: normal; }
 .review-empty--complete { margin-top: 0.75rem; }
+.review-timeline { margin-top: 2.5rem; padding-top: 1.4rem; border-top: 1px solid #d7cbb9; }
+.review-timeline-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
+.review-timeline-heading h2 { margin-top: 0.32rem; color: #2f3c36; font-size: clamp(1.3rem, 3vw, 1.65rem); font-weight: 600; }
+.review-timeline-heading > span { display: grid; width: 1.75rem; height: 1.75rem; place-items: center; border: 1px solid #cdbfa9; border-radius: 50%; color: #8d7253; font-family: var(--font-mono); font-size: 0.68rem; }
+.review-timeline-list { display: grid; gap: 0.65rem; margin-top: 1rem; }
+.review-timeline-card { display: grid; grid-template-columns: 4.4rem minmax(0, 1fr) auto; align-items: center; gap: 0.9rem; width: 100%; padding: 0.72rem 0.85rem; border: 1px solid #d7cbb9; border-radius: 5px; background: #f8f2e7; color: #2f3c36; text-align: left; cursor: pointer; transition: transform 160ms ease, border-color 160ms ease, background 160ms ease; }
+.review-timeline-card:hover { border-color: #c38a53; background: #fff9ee; transform: translateX(2px); }
+.review-timeline-card:focus-visible { outline: 2px solid #e87832; outline-offset: 3px; }
+.review-timeline-date { color: #9b6338; font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.review-timeline-copy { display: grid; gap: 0.16rem; min-width: 0; }
+.review-timeline-copy strong { overflow: hidden; color: #2f3c36; font-family: var(--font-heading); font-size: 1rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.review-timeline-action { color: #a65128; font-family: var(--font-mono); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
+.review-timeline--new .review-timeline-card { background: #f2f7ee; border-color: #c6d5be; }
+.review-timeline--new .review-timeline-card:hover { background: #f8fcf4; border-color: #8eaf82; }
+.review-timeline--new .review-timeline-date { color: #4d7651; }
+.review-timeline--new .review-timeline-action { color: #476f4c; }
 
 @media (max-width: 620px) {
   .library-map-card { display: grid; grid-template-columns: 2.5rem 1fr; gap: 0.8rem; }
@@ -1478,4 +1545,6 @@ select {
   .review-body { width: min(100% - 1.5rem, 700px); padding-top: 2.1rem; }
   .review-concept-heading { display: block; }
   .review-concept-count { display: block; margin-top: 0.55rem; text-align: left; }
+  .review-timeline-card { grid-template-columns: 3.8rem minmax(0, 1fr); }
+  .review-timeline-action { grid-column: 2; }
 }

@@ -16,6 +16,90 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
+type ExamPathStep = {
+  concept: ConceptNodeResponse;
+  timing: string;
+};
+
+function dateAtStartOfDay(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function dateFromCalendarValue(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function orderConceptsByPrerequisite(study: StudyResponse) {
+  const conceptsById = new Map(study.concepts.map((concept) => [concept.id, concept]));
+  const originalOrder = new Map(study.concepts.map((concept, index) => [concept.id, index]));
+  const dependents = new Map<number, number[]>();
+  const remainingPrerequisites = new Map<number, number>();
+
+  study.concepts.forEach((concept) => {
+    dependents.set(concept.id, []);
+    remainingPrerequisites.set(concept.id, 0);
+  });
+  study.edges.forEach((edge) => {
+    if (!conceptsById.has(edge.prerequisite_node_id) || !conceptsById.has(edge.dependent_node_id)) return;
+    dependents.get(edge.prerequisite_node_id)?.push(edge.dependent_node_id);
+    remainingPrerequisites.set(
+      edge.dependent_node_id,
+      (remainingPrerequisites.get(edge.dependent_node_id) ?? 0) + 1,
+    );
+  });
+
+  const sortByOriginalOrder = (left: number, right: number) => (
+    (originalOrder.get(left) ?? 0) - (originalOrder.get(right) ?? 0)
+  );
+  const available = study.concepts
+    .filter((concept) => remainingPrerequisites.get(concept.id) === 0)
+    .map((concept) => concept.id)
+    .sort(sortByOriginalOrder);
+  const ordered: ConceptNodeResponse[] = [];
+
+  while (available.length > 0) {
+    const conceptId = available.shift();
+    if (conceptId === undefined) break;
+    const concept = conceptsById.get(conceptId);
+    if (concept) ordered.push(concept);
+    for (const dependentId of dependents.get(conceptId) ?? []) {
+      const remaining = (remainingPrerequisites.get(dependentId) ?? 1) - 1;
+      remainingPrerequisites.set(dependentId, remaining);
+      if (remaining === 0) {
+        available.push(dependentId);
+        available.sort(sortByOriginalOrder);
+      }
+    }
+  }
+
+  return ordered.length === study.concepts.length ? ordered : study.concepts;
+}
+
+function buildExamPath(study: StudyResponse): { daysRemaining: number; steps: ExamPathStep[] } | null {
+  if (!study.exam_date || study.concepts.length === 0) return null;
+
+  const today = dateAtStartOfDay(new Date());
+  const examDate = dateFromCalendarValue(study.exam_date);
+  const daysRemaining = Math.max(0, Math.round((examDate.getTime() - today.getTime()) / 86_400_000));
+  const concepts = orderConceptsByPrerequisite(study);
+
+  return {
+    daysRemaining,
+    steps: concepts.map((concept, index) => {
+      const offset = concepts.length === 1 ? 0 : Math.round((index * daysRemaining) / (concepts.length - 1));
+      const scheduledDate = new Date(today);
+      scheduledDate.setDate(today.getDate() + offset);
+      const timing = offset === 0
+        ? "Today"
+        : offset === daysRemaining
+          ? "Exam day"
+          : scheduledDate.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      return { concept, timing };
+    }),
+  };
+}
+
 export default function MapWorkspace({ studyId }: { studyId: string }) {
   const [study, setStudy] = useState<StudyResponse | null>(null);
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(null);
@@ -93,6 +177,7 @@ export default function MapWorkspace({ studyId }: { studyId: string }) {
   const selectedConcept = useMemo<ConceptNodeResponse | null>(() => (
     study?.concepts.find((concept) => String(concept.id) === selectedConceptId) ?? null
   ), [selectedConceptId, study]);
+  const examPath = useMemo(() => (study ? buildExamPath(study) : null), [study]);
 
   return (
     <main className="map-page">
@@ -111,6 +196,38 @@ export default function MapWorkspace({ studyId }: { studyId: string }) {
                 <div><dt>Concepts</dt><dd>{study.concepts.length}</dd></div>
                 <div><dt>Study time</dt><dd>{study.time} min</dd></div>
               </dl>
+              {examPath && (
+                <section className="exam-readiness" aria-labelledby="exam-readiness-title">
+                  <div className="exam-readiness-heading">
+                    <div>
+                      <p className="map-eyebrow">Exam-ready path</p>
+                      <h2 id="exam-readiness-title">
+                        {examPath.daysRemaining === 0 ? "Exam day" : `${examPath.daysRemaining} days to go`}
+                      </h2>
+                    </div>
+                    <span>{study.exam_date}</span>
+                  </div>
+                  <p>Build from prerequisites first, then arrive ready to retrieve the whole topic.</p>
+                  <ol className="exam-readiness-steps">
+                    {examPath.steps.map(({ concept, timing }, index) => (
+                      <li key={concept.id}>
+                        <button
+                          type="button"
+                          className={`exam-readiness-step${String(concept.id) === selectedConceptId ? " exam-readiness-step--selected" : ""}`}
+                          aria-current={String(concept.id) === selectedConceptId ? "step" : undefined}
+                          onClick={() => setSelectedConceptId(String(concept.id))}
+                        >
+                          <span className="exam-readiness-step-number">{index + 1}</span>
+                          <span>
+                            <strong>{concept.title}</strong>
+                            <small>{timing}</small>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              )}
               <p className="map-legend"><span aria-hidden="true" />Orange threads mark what to understand first.</p>
             </aside>
 
