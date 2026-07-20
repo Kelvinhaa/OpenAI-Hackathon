@@ -464,7 +464,7 @@ select {
 }
 .btn-signout {
   height: 1.625rem; padding: 0 0.75rem; font-size: 0.65rem; font-weight: 500;
-  text-transform: uppercase; letter-spacing: 0.04em;
+  text-transform: lowercase; letter-spacing: 0.04em;
   border-radius: 9999px; border: none; background: var(--muted); color: var(--muted-foreground);
   cursor: pointer; transition: all 0.15s ease; white-space: nowrap; font-family: var(--font-mono);
 }
@@ -983,7 +983,6 @@ select {
 .recall-rating { min-height: 2.2rem; border: 1px solid #d5c8b6; border-radius: 4px; background: #fffdf8; color: #514638; cursor: pointer; font-family: var(--font-mono); font-size: 0.65rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
 .recall-rating:hover:not(:disabled) { border-color: #e87832; color: #c75f25; background: #fff7ec; }
 .recall-rating:disabled { cursor: not-allowed; opacity: 0.55; }
-.recall-rating--3 { border-color: #e8b081; background: #fff6eb; color: #c75f25; }
 
 .recall-confirmed { display: flex; gap: 0.65rem; align-items: flex-start; margin-top: 1rem; padding: 0.85rem; border: 1px solid #bbd0b7; border-radius: 5px; background: #f2f8ef; color: #36513c; }
 .recall-confirmed > span { display: grid; width: 1.25rem; height: 1.25rem; place-items: center; border-radius: 50%; background: #6a9768; color: #fff; font-family: var(--font-mono); font-size: 0.72rem; }
@@ -1291,11 +1290,16 @@ select {
 
 .topnav-tabs { display: flex; align-items: center; gap: 1.5rem; position: relative; }
 .topnav-tab {
+  display: inline-flex; align-items: center; gap: 0.35rem;
   font-family: var(--font-mono); font-size: 0.75rem; font-weight: 500;
-  text-transform: uppercase; letter-spacing: 0.06em;
+  text-transform: lowercase; letter-spacing: 0.06em;
   color: var(--color-stone); text-decoration: none;
   padding: 0.35rem 0; position: relative;
   transition: color 0.2s ease;
+}
+.topnav-tab-icon {
+  width: 1.125rem; height: 1.125rem;
+  object-fit: contain; flex: 0 0 auto;
 }
 .topnav-tab:hover { color: var(--color-graphite); }
 .topnav-tab--active { color: var(--color-graphite); }
@@ -1326,7 +1330,7 @@ select {
 }
 .topnav-avatar {
   width: 1.5rem; height: 1.5rem; border-radius: 50%;
-  background: var(--color-ink); color: #fff;
+  background: #eee7d9; color: #2b3933;
   font-size: 0.65rem; font-weight: 600;
   display: flex; align-items: center; justify-content: center;
   text-transform: uppercase; flex-shrink: 0;
@@ -1341,6 +1345,8 @@ select {
 @media (max-width: 640px) {
   .topnav { gap: 0.75rem; padding: 0 1rem; }
   .topnav-tabs { gap: 1rem; }
+  .topnav-tab { gap: 0.25rem; }
+  .topnav-tab-icon { width: 1rem; height: 1rem; }
   .topnav-email { display: none; }
 }
 

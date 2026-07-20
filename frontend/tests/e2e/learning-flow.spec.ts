@@ -23,6 +23,23 @@ test("planner navigation opens the most recently saved map", async ({ page }) =>
 
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Plan map" })).toHaveAttribute("href", "/map/9");
+  await expect(page.locator(".topnav-user .topnav-email")).not.toHaveText("");
+  await expect(page.locator(".topnav-avatar")).not.toHaveText("");
+  await expect(page.locator(".topnav-tab").filter({ hasText: "Planner" })).toHaveCSS("text-transform", "lowercase");
+  await expect(page.getByRole("button", { name: "Sign out" })).toHaveCSS("text-transform", "lowercase");
+  await expect(page.locator(".topnav-avatar")).toHaveCSS("background-color", "rgb(238, 231, 217)");
+  await expect(page.locator(".topnav-avatar")).toHaveCSS("color", "rgb(43, 57, 51)");
+
+  for (const [label, icon] of [
+    ["Planner", "planner"],
+    ["Library", "library"],
+    ["Review", "review"],
+    ["Plan map", "planning-map"],
+  ]) {
+    await expect(
+      page.locator(".topnav-tab").filter({ hasText: label }).locator(`[data-nav-icon="${icon}"]`),
+    ).toBeVisible();
+  }
 });
 
 test("authenticated planner hands a generated plan off to its learning map", async ({ page }) => {
@@ -170,6 +187,7 @@ test("student receives feedback then confirms a rating", async ({ page }) => {
   await page.getByLabel("Your explanation").fill("It creates two identical cells.");
   await page.getByRole("button", { name: "Check recall" }).click();
   await expect(page.getByText("Suggested rating")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Good" })).not.toHaveClass(/recall-rating--3/);
   await page.getByRole("button", { name: "Good" }).click();
   await expect(page.getByText(/Next review/)).toBeVisible();
   await expect(page.getByText("Growing", { exact: true })).toBeVisible();

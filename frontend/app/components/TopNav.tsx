@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { MindMapprMark } from "@/app/components/MindMapprMark";
@@ -11,9 +12,9 @@ import type { StudyResponse } from "@/types/study";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 const TABS = [
-  { href: "/", label: "Planner" },
-  { href: "/library", label: "Library" },
-  { href: "/review", label: "Review" },
+  { href: "/", label: "Planner", icon: "planner", image: "/nav/planner.png" },
+  { href: "/library", label: "Library", icon: "library", image: "/nav/library.png" },
+  { href: "/review", label: "Review", icon: "review", image: "/nav/review.png" },
 ] as const;
 
 // useLayoutEffect warns during SSR; the nav only measures in the browser.
@@ -31,10 +32,16 @@ function mostRecentMapHref(studies: StudyResponse[]) {
   return mostRecentStudy ? `/map/${mostRecentStudy.id}` : null;
 }
 
+function displayNameForUser(user: { email?: string; user_metadata?: Record<string, unknown> } | null) {
+  const username = user?.user_metadata?.username;
+  if (typeof username === "string" && username.trim()) return username.trim();
+  return user?.email ?? null;
+}
+
 export function TopNav({ planMapHref }: { planMapHref?: string }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userDisplayName, setUserDisplayName] = useState<string | null>(null);
   const [latestMapHref, setLatestMapHref] = useState<string | null>(null);
   const tabsRef = useRef<HTMLElement>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -58,11 +65,11 @@ export function TopNav({ planMapHref }: { planMapHref?: string }) {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return;
-      setUserEmail(session?.user?.email ?? null);
+      setUserDisplayName(displayNameForUser(session?.user ?? null));
       if (session?.access_token) void loadLatestMap(session.access_token);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email ?? null);
+      setUserDisplayName(displayNameForUser(session?.user ?? null));
       if (session?.access_token) {
         void loadLatestMap(session.access_token);
       } else {
@@ -88,7 +95,7 @@ export function TopNav({ planMapHref }: { planMapHref?: string }) {
   const mapHref = pathname.startsWith("/map/")
     ? pathname
     : planMapHref ?? latestMapHref;
-  const tabs = [...TABS, { href: mapHref, label: "Plan map" }];
+  const tabs = [...TABS, { href: mapHref, label: "Plan map", icon: "planning-map", image: "/nav/planning-map.png" }];
   const activeIndex = tabs.findIndex((tab) => tab.href && isActive(tab.href));
 
   // A single underline slides between tabs, so it tracks whichever tab is hovered
@@ -121,7 +128,7 @@ export function TopNav({ planMapHref }: { planMapHref?: string }) {
       cancelled = true;
       observer.disconnect();
     };
-  }, [targetIndex, tabs.length, userEmail]);
+  }, [targetIndex, tabs.length, userDisplayName]);
 
   return (
     <header className="topnav">
@@ -130,7 +137,7 @@ export function TopNav({ planMapHref }: { planMapHref?: string }) {
         <Wordmark className="topnav-name" />
       </Link>
 
-      {userEmail && (
+      {userDisplayName && (
         <nav
           className="topnav-tabs"
           ref={tabsRef}
@@ -147,11 +154,27 @@ export function TopNav({ planMapHref }: { planMapHref?: string }) {
                 onFocus={() => setHoveredIndex(index)}
                 onBlur={() => setHoveredIndex(null)}
               >
-                {tab.label}
+                <Image
+                  className="topnav-tab-icon"
+                  data-nav-icon={tab.icon}
+                  src={tab.image}
+                  alt=""
+                  width={24}
+                  height={24}
+                />
+                <span>{tab.label}</span>
               </Link>
             ) : (
               <span key={tab.label} className="topnav-tab topnav-tab--disabled" aria-disabled="true" title="Create a plan to open its map">
-                {tab.label}
+                <Image
+                  className="topnav-tab-icon"
+                  data-nav-icon={tab.icon}
+                  src={tab.image}
+                  alt=""
+                  width={24}
+                  height={24}
+                />
+                <span>{tab.label}</span>
               </span>
             )
           ))}
@@ -166,11 +189,11 @@ export function TopNav({ planMapHref }: { planMapHref?: string }) {
       )}
 
       <div className="topnav-right">
-        {userEmail ? (
+        {userDisplayName ? (
           <>
             <div className="topnav-user">
-              <span className="topnav-avatar">{userEmail[0]?.toUpperCase()}</span>
-              <span className="topnav-email">{userEmail}</span>
+              <span className="topnav-avatar">{userDisplayName[0]?.toUpperCase()}</span>
+              <span className="topnav-email">{userDisplayName}</span>
             </div>
             <button className="btn-signout" onClick={handleSignOut}>Sign out</button>
           </>

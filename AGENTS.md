@@ -98,6 +98,10 @@ keep components, client/server boundaries, and reusable helpers in their
 current locations. Let ESLint and the Next.js configuration guide formatting
 and framework conventions.
 
+For user-facing UI copy, generally prefer lowercase wording for navigation,
+buttons, and short labels. Preserve capitalization where grammar, proper
+nouns, or established technical terms require it.
+
 ## Testing
 
 Run the relevant checks before requesting review:

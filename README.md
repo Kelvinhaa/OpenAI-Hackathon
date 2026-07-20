@@ -163,3 +163,9 @@ feedback on retrieval-practice answers.
 The learner remains in control of the rating: the model can suggest a rating,
 but only the learner's selected `Again`, `Hard`, `Good`, or `Easy` rating updates
 the review schedule.
+
+## Icon credits
+
+- [Literature icons created by Magnific - Flaticon](https://www.flaticon.com/free-icons/literature)
+- [Folder icons created by kmg design - Flaticon](https://www.flaticon.com/free-icons/folder)
+- [Schedule icons created by Magnific - Flaticon](https://www.flaticon.com/free-icons/schedule)

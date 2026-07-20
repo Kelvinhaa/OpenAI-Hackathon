@@ -93,7 +93,7 @@ export function RecallCheck({
             {RATINGS.map((rating) => (
               <button
                 key={rating.value}
-                className={`recall-rating recall-rating--${rating.value}`}
+                className="recall-rating"
                 onClick={() => confirmRating(rating.value)}
                 disabled={busy}
               >

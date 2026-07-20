@@ -3,6 +3,29 @@ import { expect, test } from "@playwright/test";
 test.describe("guest retention preview", () => {
   test.describe.configure({ mode: "serial" });
 
+  test("registration sends username as Auth metadata", async ({ page }) => {
+    await page.route("**/auth/v1/signup*", async (route) => {
+      expect(route.request().postDataJSON()).toMatchObject({
+        email: "ada@example.com",
+        password: "Password1",
+        data: { username: "Ada Lovelace" },
+      });
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          user: { id: "user-1", email: "ada@example.com" },
+          session: null,
+        }),
+      });
+    });
+
+    await page.goto("/register");
+    await page.getByLabel("Username").fill("  Ada Lovelace  ");
+    await page.getByLabel("Email").fill("ada@example.com");
+    await page.getByLabel("Password").fill("Password1");
+    await page.getByRole("button", { name: "Create Account" }).click();
+  });
+
   test("guest header keeps sign-in and sign-up actions available", async ({ page }) => {
     await page.goto("/");
 
