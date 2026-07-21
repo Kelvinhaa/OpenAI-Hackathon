@@ -43,6 +43,7 @@ export function TopNav({ planMapHref }: { planMapHref?: string }) {
   const pathname = usePathname();
   const [userDisplayName, setUserDisplayName] = useState<string | null>(null);
   const [latestMapHref, setLatestMapHref] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const tabsRef = useRef<HTMLElement>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
@@ -81,6 +82,17 @@ export function TopNav({ planMapHref }: { planMapHref?: string }) {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [mobileMenuOpen]);
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -186,6 +198,60 @@ export function TopNav({ planMapHref }: { planMapHref?: string }) {
             />
           )}
         </nav>
+      )}
+
+      {userDisplayName && (
+        <>
+          <button
+            type="button"
+            className="topnav-mobile-toggle"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-navigation"
+            aria-label={`${mobileMenuOpen ? "Close" : "Open"} navigation menu`}
+            onClick={() => setMobileMenuOpen((open) => !open)}
+          >
+            <span className="topnav-mobile-toggle-icon" aria-hidden="true">☰</span>
+            <span>menu</span>
+          </button>
+          <nav
+            id="mobile-navigation"
+            className={`topnav-mobile-menu${mobileMenuOpen ? " topnav-mobile-menu--open" : ""}`}
+            aria-label="Mobile navigation"
+            aria-hidden={!mobileMenuOpen}
+          >
+            {tabs.map((tab) => (
+              tab.href ? (
+                <Link
+                  key={tab.href}
+                  href={tab.href}
+                  className="topnav-mobile-tab"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <Image
+                    className="topnav-tab-icon"
+                    src={tab.image}
+                    alt=""
+                    width={24}
+                    height={24}
+                  />
+                  <span>{tab.label}</span>
+                </Link>
+              ) : (
+                <span key={tab.label} className="topnav-mobile-tab topnav-mobile-tab--disabled" aria-disabled="true">
+                  <Image
+                    className="topnav-tab-icon"
+                    src={tab.image}
+                    alt=""
+                    width={24}
+                    height={24}
+                  />
+                  <span>{tab.label}</span>
+                </span>
+              )
+            ))}
+            <button type="button" className="topnav-mobile-signout" onClick={handleSignOut}>Sign out</button>
+          </nav>
+        </>
       )}
 
       <div className="topnav-right">

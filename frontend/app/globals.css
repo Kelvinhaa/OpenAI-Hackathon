@@ -1289,6 +1289,8 @@ select {
 .topnav-name { font-size: 1.0625rem; letter-spacing: -0.01em; }
 
 .topnav-tabs { display: flex; align-items: center; gap: 1.5rem; position: relative; }
+.topnav-mobile-toggle,
+.topnav-mobile-menu { display: none; }
 .topnav-tab {
   display: inline-flex; align-items: center; gap: 0.35rem;
   font-family: var(--font-mono); font-size: 0.75rem; font-weight: 500;
@@ -1344,9 +1346,42 @@ select {
 
 @media (max-width: 640px) {
   .topnav { gap: 0.75rem; padding: 0 1rem; }
-  .topnav-tabs { gap: 1rem; }
-  .topnav-tab { gap: 0.25rem; }
-  .topnav-tab-icon { width: 1rem; height: 1rem; }
+  .topnav-tabs { display: none; }
+  .topnav-mobile-toggle {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    border: 1px solid var(--border); border-radius: 9999px;
+    background: var(--background); color: var(--color-graphite);
+    padding: 0.38rem 0.65rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.05em;
+    text-transform: lowercase; cursor: pointer;
+  }
+  .topnav-mobile-toggle:hover { border-color: var(--brand-border); color: var(--brand); }
+  .topnav-mobile-toggle:focus-visible,
+  .topnav-mobile-tab:focus-visible,
+  .topnav-mobile-signout:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .topnav-mobile-toggle-icon { font-size: 0.9rem; line-height: 1; }
+  .topnav-mobile-menu {
+    position: absolute; top: calc(100% + 0.5rem); right: 1rem;
+    display: none; flex-direction: column; gap: 0.15rem;
+    width: min(250px, calc(100vw - 2rem)); padding: 0.5rem;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: var(--shadow-card); z-index: 60;
+  }
+  .topnav-mobile-menu--open { display: flex; }
+  .topnav-mobile-tab,
+  .topnav-mobile-signout {
+    display: flex; align-items: center; gap: 0.6rem;
+    width: 100%; min-height: 2.5rem; padding: 0.55rem 0.65rem;
+    border: 0; border-radius: 6px; background: transparent;
+    color: var(--color-graphite); text-decoration: none;
+    font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.05em;
+    text-align: left; text-transform: lowercase; cursor: pointer;
+  }
+  .topnav-mobile-tab:hover,
+  .topnav-mobile-signout:hover { background: var(--background); color: var(--brand); }
+  .topnav-mobile-tab--disabled { cursor: not-allowed; opacity: 0.48; }
+  .topnav-mobile-signout { margin-top: 0.35rem; border-top: 1px solid var(--border); border-radius: 0; }
+  .topnav-right .btn-signout { display: none; }
   .topnav-email { display: none; }
 }
 

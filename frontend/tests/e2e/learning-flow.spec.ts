@@ -8,6 +8,28 @@ test("planner presents the four study inputs", async ({ page }) => {
   await expect(page.getByLabel("Learning Goal")).toBeVisible();
 });
 
+test("mobile navigation opens an accessible compact menu", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const menuButton = page.locator(".topnav-mobile-toggle");
+  await expect(menuButton).toBeVisible();
+  await menuButton.click();
+
+  const menu = page.getByRole("navigation", { name: "Mobile navigation" });
+  await expect(menu).toBeVisible();
+  await expect(page.getByRole("link", { name: "Planner", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Library", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review", exact: true })).toBeVisible();
+  await expect(menu.getByText("Plan map", { exact: true })).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toBeVisible();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+});
+
 test("planner navigation opens the most recently saved map", async ({ page }) => {
   await page.route("**/study", async (route) => {
     expect(route.request().method()).toBe("GET");
@@ -290,8 +312,8 @@ test("library opens a saved map and review shows due concepts", async ({ page })
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   const savedMap = page.locator(".library-map-card");
   await expect(savedMap).toHaveCount(1);
-  await expect(savedMap.evaluate((element) => getComputedStyle(element, "::after").content)).toBe("none");
-  await page.getByRole("link", { name: "Open cell division map" }).click();
+  await expect(await savedMap.evaluate((element) => getComputedStyle(element, "::after").content)).toBe("none");
+  await page.getByRole("link", { name: "open plan map" }).click();
   await expect(page).toHaveURL(/\/map\/1$/);
   await expect(page.getByRole("link", { name: "Plan map" })).toBeVisible();
 

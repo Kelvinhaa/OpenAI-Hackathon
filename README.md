@@ -1,14 +1,15 @@
 # OpenAI Hackathon MindMappr
 
-MindMappr turns a study topic, available time, learner level, and goal into a
+Study does not have to be solely memorizing and unstructured.As a tutor myself, a lot of students miss the potential benefit of learning efficiently and the right way. This is why I built MindMappr. MindMappr turns a study topic, available time, learner level, and goal into a
 practical study plan and a small prerequisite map. Learners can explain a
 concept in their own words, receive concise formative feedback, choose their
-own recall rating, and return when that concept is due for review.
+own recall rating, and return when that concept is due for review. The logic behind is based on **FSRS** (Free Spaced Repetition Scheduler). It is a modern algorithm for spaced repetition technique that dramatically improves flashcard study efficiency.
 
 Live Webpage: https://open-ai-hackathon-rho.vercel.app/
+
 ## What it does
 
-- Generates a subject-specific study plan with timed techniques and tips.
+- Based on the provided information about learning goal, subjects, exam dates and level of difficulty, it generates a subject-specific study plan with timed techniques and tips.
 - Creates a 4–6 concept learning map with prerequisite relationships.
 - Provides retrieval-practice feedback before the learner records a rating.
 - Schedules concept-level reviews with FSRS-inspired stability and difficulty
@@ -76,10 +77,7 @@ uvicorn backends.main:app --reload --port 8001
 ```
 
 The API is pinned to **8001** rather than the usual 8000 so it cannot collide with
-another FastAPI backend on the same machine. Two backends sharing a port is not a
-loud failure: the second one to start simply loses, and the other project's
-frontend then talks to whichever won — producing `401 Invalid token` on every
-signed-in request, because the two trust different Supabase projects.
+another FastAPI backend on the same machine.
 
 Start the web app in another terminal:
 
@@ -107,7 +105,7 @@ alembic upgrade head
 | `DATABASE_URL` | Backend | SQLAlchemy/Postgres connection string. |
 | `SUPABASE_URL` | Backend | Supabase project URL used for authentication configuration. |
 | `SUPABASE_JWT_SECRET` | Backend | Verifies Supabase access tokens. |
-| `REDIS_URL` | Backend | Rate-limit storage. |
+| `REDIS_URL` | Backend | Rate-limit storage. | (Optional)
 | `CORS_ORIGINS` | Backend | Comma-separated allowed frontend origins. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Frontend | Supabase project URL. |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Frontend | Browser-safe Supabase publishable key. |
@@ -156,7 +154,7 @@ npm run test:e2e
 
 Codex accelerated the frontend, FastAPI routes, database migration, automated
 tests, and project documentation. GPT-5.6 Luna is used through the OpenAI
-Responses API with low reasoning effort and structured Pydantic outputs to
+Responses API and structured Pydantic outputs to
 create the study plan and learning map, and to provide bounded formative
 feedback on retrieval-practice answers.
 
