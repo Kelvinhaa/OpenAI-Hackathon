@@ -164,6 +164,27 @@ h1, h2, h3, h4 {
 }
 .tagline { color: var(--muted-foreground); font-size: 0.9375rem; max-width: 300px; margin: 0 auto; }
 
+/* Rotating study prompt — a quiet cue before the recommendation composer. */
+.study-subject-rotator {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  min-height: 2.875rem; margin: -0.75rem auto 1.5rem;
+  color: var(--color-graphite); font-family: var(--font-heading); font-size: 1.25rem;
+}
+.study-subject-rotator-question { font-style: italic; }
+.study-subject-rotator-token {
+  min-width: 7.25ch; padding: 0.35rem 0.65rem 0.4rem;
+  overflow: hidden; border-bottom: 2px solid var(--brand);
+  background: rgba(234, 88, 12, 0.06); color: var(--brand-hover);
+  font-family: var(--font-mono); font-size: 0.76em; font-weight: 600;
+  line-height: 1; letter-spacing: 0.01em;
+}
+.study-subject-rotator-word { overflow: hidden; padding-bottom: 0.08em; }
+
+@media (max-width: 480px) {
+  .study-subject-rotator { gap: 0.35rem; margin-bottom: 1.25rem; font-size: 1.06rem; }
+  .study-subject-rotator-token { min-width: 6.75ch; padding-inline: 0.5rem; }
+}
+
 /* Wordmark — "mind" upright serif + "mappr" mono, echoing the FSRS data labels */
 .word-mind { font-family: var(--font-heading); font-weight: 700; color: var(--color-graphite); }
 .word-mappr { font-family: var(--font-mono); font-weight: 600; color: var(--brand-hover); }
@@ -324,6 +345,22 @@ select {
 .suffix { position: absolute; right: 0.875rem; color: var(--color-stone); font-size: 0.8rem; pointer-events: none; }
 
 .form-hint { font-size: 0.75rem; color: var(--muted-foreground); }
+.pdf-upload-group { gap: 0.5rem; }
+.pdf-upload-input {
+  height: auto; padding: 0.55rem 0.75rem;
+  cursor: pointer; line-height: 1.2;
+}
+.pdf-upload-input::file-selector-button {
+  margin-right: 0.75rem; padding: 0.3rem 0.55rem;
+  border: 0; border-radius: 5px;
+  background: var(--muted); color: var(--foreground);
+  font-family: var(--font-body); cursor: pointer;
+}
+.pdf-upload-input:focus-visible {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.14);
+}
+.pdf-upload-guest { margin: -0.375rem 0 0; }
 .optional-badge {
   font-size: 0.7rem; font-weight: 400; color: var(--muted-foreground);
   background: var(--muted); padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: 0.375rem;
@@ -1531,6 +1568,29 @@ select {
 }
 .library-map-link:hover { border-color: #df7940; background: #fff0de; }
 .library-map-link:focus-visible { outline: 2px solid #e87832; outline-offset: 3px; }
+.library-map-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.55rem; flex: 0 0 auto; }
+.library-map-remove,
+.library-map-removal button {
+  width: auto;
+  padding: 0.48rem 0.62rem;
+  border: 1px solid #d6ae9c;
+  border-radius: 5px;
+  background: transparent;
+  color: #9d4d32;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+.library-map-remove:hover { border-color: #b65a39; background: #fff1e9; }
+.library-map-remove:focus-visible,
+.library-map-removal button:focus-visible { outline: 2px solid #e87832; outline-offset: 3px; }
+.library-map-removal { display: grid; gap: 0.32rem; color: #8d5540; font-family: var(--font-mono); font-size: 0.61rem; letter-spacing: 0.03em; }
+.library-map-removal > div { display: flex; gap: 0.38rem; }
+.library-map-removal button:first-child { border-color: #b65a39; background: #b65a39; color: #fffaf2; }
+.library-map-removal button:last-child { border-color: #d8c9b2; color: #746959; }
+.library-map-remove-error { max-width: 12rem; color: var(--error-rust); font-size: 0.72rem; }
 
 .review-page { min-height: 100vh; background: #eee7d9; }
 .review-body { width: min(100% - 2rem, 700px); margin: 0 auto; padding: 3.25rem 0 5rem; }
@@ -1574,7 +1634,7 @@ select {
 .review-timeline-date { color: #9b6338; font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .review-timeline-copy { display: grid; gap: 0.16rem; min-width: 0; }
 .review-timeline-copy strong { overflow: hidden; color: #2f3c36; font-family: var(--font-heading); font-size: 1rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.review-timeline-action { color: #a65128; font-family: var(--font-mono); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
+.review-timeline-action { color: #a65128; font-family: var(--font-mono); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.04em; text-transform: lowercase; white-space: nowrap; }
 .review-timeline--new .review-timeline-card { background: #f2f7ee; border-color: #c6d5be; }
 .review-timeline--new .review-timeline-card:hover { background: #f8fcf4; border-color: #8eaf82; }
 .review-timeline--new .review-timeline-date { color: #4d7651; }
@@ -1582,7 +1642,7 @@ select {
 
 @media (max-width: 620px) {
   .library-map-card { display: grid; grid-template-columns: 2.5rem 1fr; gap: 0.8rem; }
-  .library-map-link { grid-column: 2; justify-self: start; }
+  .library-map-actions { grid-column: 2; justify-content: start; flex-wrap: wrap; }
   .review-body { width: min(100% - 1.5rem, 700px); padding-top: 2.1rem; }
   .review-concept-heading { display: block; }
   .review-concept-count { display: block; margin-top: 0.55rem; text-align: left; }

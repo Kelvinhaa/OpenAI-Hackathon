@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
 from backends.database import get_db
@@ -12,8 +12,9 @@ from backends.schemas.study import (
     ConceptReviewQueueItem, ConceptReviewRequest, ConceptReviewResponse,
     RetrievalAnswerRequest, RetrievalFeedbackResult, StatsResponse,
     ReviewPreviewResponse,
-    StudyRecommendation,
+    GeneratedLearningExperience, StudyRecommendation,
 )
+from backends.services.pdf_context import MAX_PDF_BYTES, PdfContextError, extract_pdf_context
 from backends.services.study import (
     LearningExperienceGenerationError, apply_fsrs, generate_learning_experience,
     generate_recommendation,
@@ -157,30 +158,13 @@ def list_studies(
     return [_study_response(session, db) for session in sessions]
 
 
-@router.post("", response_model=StudyResponse)
-@limiter.limit("5/minute")
-async def create_study(
-    request: Request,
+def _persist_learning_experience(
+    *,
     payload: StudyRequest,
-    db: Session = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
-):
-    try:
-        experience = await generate_learning_experience(
-            subject=payload.subject,
-            level=payload.level,
-            time=payload.time,
-            goal=payload.goal,
-            exam_date=payload.exam_date,
-        )
-    except LearningExperienceGenerationError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Learning map generation is temporarily unavailable. Please try again.",
-        )
-
-    parsed_user_id = _parse_user_id(user_id)
-
+    experience: GeneratedLearningExperience,
+    db: Session,
+    user_id: uuid.UUID,
+) -> StudyResponse:
     recommendation = StudyRecommendation(
         summary=experience.summary,
         techniques=experience.techniques,
@@ -188,7 +172,7 @@ async def create_study(
     )
     try:
         session = StudySession(
-            user_id=parsed_user_id,
+            user_id=user_id,
             time=payload.time,
             subject=payload.subject,
             level=payload.level,
@@ -228,6 +212,87 @@ async def create_study(
 
     db.refresh(session)
     return _study_response(session, db)
+
+
+@router.post("", response_model=StudyResponse)
+@limiter.limit("5/minute")
+async def create_study(
+    request: Request,
+    payload: StudyRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    try:
+        experience = await generate_learning_experience(
+            subject=payload.subject,
+            level=payload.level,
+            time=payload.time,
+            goal=payload.goal,
+            exam_date=payload.exam_date,
+        )
+    except LearningExperienceGenerationError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Learning map generation is temporarily unavailable. Please try again.",
+        )
+
+    return _persist_learning_experience(
+        payload=payload,
+        experience=experience,
+        db=db,
+        user_id=_parse_user_id(user_id),
+    )
+
+
+@router.post("/from-pdf", response_model=StudyResponse)
+@limiter.limit("5/minute")
+async def create_study_from_pdf(
+    request: Request,
+    document: UploadFile = File(...),
+    subject: str = Form(...),
+    time: int = Form(...),
+    level: str = Form(...),
+    goal: str | None = Form(default=None),
+    exam_date: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    payload = StudyRequest(
+        subject=subject,
+        time=time,
+        level=level,
+        goal=goal,
+        exam_date=exam_date,
+    )
+    raw_document = await document.read(MAX_PDF_BYTES + 1)
+    try:
+        context = extract_pdf_context(raw_document)
+    except PdfContextError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    finally:
+        await document.close()
+
+    try:
+        experience = await generate_learning_experience(
+            subject=payload.subject,
+            level=payload.level,
+            time=payload.time,
+            goal=payload.goal,
+            exam_date=payload.exam_date,
+            source_context=context.text,
+        )
+    except LearningExperienceGenerationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Learning map generation is temporarily unavailable. Please try again.",
+        ) from exc
+
+    return _persist_learning_experience(
+        payload=payload,
+        experience=experience,
+        db=db,
+        user_id=_parse_user_id(user_id),
+    )
 
 
 @router.post("/preview", response_model=PreviewResponse)
@@ -495,6 +560,26 @@ def get_study(
     if session is None:
         raise HTTPException(status_code=404, detail="Study session not found")
     return _study_response(session, db)
+
+
+@router.delete("/{study_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_study(
+    study_id: int,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    parsed_user_id = _parse_user_id(user_id)
+    session = (
+        db.query(StudySession)
+        .filter(StudySession.id == study_id, StudySession.user_id == parsed_user_id)
+        .with_for_update()
+        .first()
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Study session not found")
+
+    db.delete(session)
+    db.commit()
 
 
 @router.post("/{session_id}/review", response_model=ReviewResponse)

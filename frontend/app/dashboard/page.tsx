@@ -144,7 +144,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <Link href="/review" className="btn btn-ghost">
-                    Review early
+                    review early
                   </Link>
                 </div>
               ))}

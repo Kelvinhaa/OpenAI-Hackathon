@@ -2,10 +2,84 @@ import { expect, test } from "@playwright/test";
 
 test("planner presents the four study inputs", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByLabel("What are you studying?")).toBeVisible();
+  const subjectExamples = page.getByLabel("Study subject examples");
+  await expect(subjectExamples).toBeVisible();
+  const username = (await page.locator(".topnav-user .topnav-email").textContent())?.trim();
+  expect(username).toBeTruthy();
+  await expect(subjectExamples).toContainText(`What are you studying today, ${username}?`);
+  await expect(subjectExamples).toContainText("biology");
+  await expect(subjectExamples).toContainText("calculus", { timeout: 3500 });
+  await expect(page.getByLabel("subject topic")).toBeVisible();
   await expect(page.getByLabel("Study Duration")).toBeVisible();
   await expect(page.getByLabel("Your Level")).toBeVisible();
   await expect(page.getByLabel("Learning Goal")).toBeVisible();
+});
+
+test("authenticated planner uploads a PDF with learner inputs", async ({ page }) => {
+  await page.route("**/study/from-pdf", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().headers().authorization).toMatch(/^Bearer\s.+/);
+    expect(route.request().headers()["content-type"]).toContain("multipart/form-data");
+    const body = route.request().postDataBuffer()?.toString() ?? "";
+    expect(body).toContain('name="subject"');
+    expect(body).toContain("Cell division");
+    expect(body).toContain('filename="notes.pdf"');
+
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 42,
+        subject: "Cell division",
+        time: 45,
+        level: "intermediate",
+        goal: "Prepare for a quiz",
+        exam_date: null,
+        recommendation: { summary: "Plan", techniques: [], tips: [] },
+        created_at: null,
+        last_reviewed_at: null,
+        next_review_at: null,
+        review_count: 0,
+        interval_days: 1,
+        stability: 0,
+        concept_count: 0,
+        due_concept_count: 0,
+        concepts: [],
+        edges: [],
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByLabel("subject topic").fill("Cell division");
+  await page.getByLabel("lecture notes / PDFs").setInputFiles({
+    name: "notes.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.7\\nnotes"),
+  });
+  await page.getByLabel("Study Duration").fill("45");
+  await page.getByLabel("Your Level").click();
+  await page.getByRole("option", { name: "Intermediate" }).click();
+  await page.getByLabel("Learning Goal").fill("Prepare for a quiz");
+  await page.getByRole("button", { name: "Generate study plan" }).click();
+
+  await expect(page.getByRole("link", { name: "Open learning map" })).toHaveAttribute(
+    "href",
+    "/map/42",
+  );
+});
+
+test("planner rotates subject examples when reduced motion is enabled", async ({ page }) => {
+  const motionWarnings: string[] = [];
+  page.on("console", (message) => {
+    if (message.text().includes("Reduced Motion enabled")) motionWarnings.push(message.text());
+  });
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  const subjectExamples = page.getByLabel("Study subject examples");
+  await expect(subjectExamples).toContainText("biology");
+  await expect(subjectExamples).toContainText("calculus", { timeout: 3500 });
+  await expect(motionWarnings).toEqual([]);
 });
 
 test("mobile navigation opens an accessible compact menu", async ({ page }) => {
@@ -97,7 +171,12 @@ test("authenticated planner hands a generated plan off to its learning map", asy
 
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
-  await page.getByLabel("What are you studying?").fill("Cell division");
+  const username = (await page.locator(".topnav-user .topnav-email").textContent())?.trim();
+  expect(username).toBeTruthy();
+  await expect(page.getByLabel("Study subject examples")).toContainText(
+    `What are you studying today, ${username}?`,
+  );
+  await page.getByLabel("subject topic").fill("Cell division");
   await page.getByLabel("Study Duration").fill("45");
   await page.getByLabel("Your Level").click();
   await page.getByRole("option", { name: "Intermediate" }).click();
@@ -109,6 +188,44 @@ test("authenticated planner hands a generated plan off to its learning map", asy
     "href",
     "/map/1",
   );
+});
+
+test("library removes an owned map", async ({ page }) => {
+  const study = {
+    id: 7,
+    subject: "Cell division",
+    time: 45,
+    level: "intermediate",
+    goal: "Prepare for a quiz",
+    exam_date: null,
+    recommendation: { summary: "Plan", techniques: [], tips: [] },
+    created_at: "2026-07-21T10:00:00Z",
+    last_reviewed_at: null,
+    next_review_at: null,
+    review_count: 0,
+    interval_days: 1,
+    stability: 0,
+    concept_count: 0,
+    due_concept_count: 0,
+    concepts: [],
+    edges: [],
+  };
+
+  await page.route("**/study", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify([study]) });
+  });
+  await page.route("**/study/7", async (route) => {
+    expect(route.request().method()).toBe("DELETE");
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.goto("/library");
+  await expect(page.getByRole("heading", { name: "Cell division" })).toBeVisible();
+  await page.getByRole("button", { name: "remove Cell division" }).click();
+  await expect(page.getByText("remove this map?")).toBeVisible();
+  await page.getByRole("button", { name: "remove permanently" }).click();
+  await expect(page.getByRole("heading", { name: "Cell division" })).not.toBeVisible();
 });
 
 test("student receives feedback then confirms a rating", async ({ page }) => {

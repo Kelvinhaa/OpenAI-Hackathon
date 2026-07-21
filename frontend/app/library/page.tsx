@@ -24,6 +24,10 @@ export default function Library() {
   const [sessions, setSessions] = useState<StudyResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [pendingRemovalId, setPendingRemovalId] = useState<number | null>(null);
+  const [removingId, setRemovingId] = useState<number | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const loadData = useCallback(async (token: string) => {
     try {
@@ -45,9 +49,34 @@ export default function Library() {
         router.push("/login");
         return;
       }
+      setAccessToken(session.access_token);
       loadData(session.access_token);
     });
   }, [router, loadData]);
+
+  async function removeMap(studyId: number) {
+    if (!accessToken) {
+      setRemoveError("Your session has expired. Please sign in again.");
+      return;
+    }
+
+    setRemovingId(studyId);
+    setRemoveError(null);
+    try {
+      const response = await fetch(`${API_BASE}/study/${studyId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) throw new Error("We could not remove that learning map.");
+
+      setSessions((items) => items.filter((item) => item.id !== studyId));
+      setPendingRemovalId(null);
+    } catch (error) {
+      setRemoveError(error instanceof Error ? error.message : "We could not remove that learning map.");
+    } finally {
+      setRemovingId(null);
+    }
+  }
 
   const maps = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -115,9 +144,47 @@ export default function Library() {
                         </div>
                       </dl>
                     </div>
-                    <Link href={`/map/${map.id}`} className="library-map-link">
-                      open plan map <span aria-hidden="true">→</span>
-                    </Link>
+                    <div className="library-map-actions">
+                      <Link href={`/map/${map.id}`} className="library-map-link">
+                        open plan map <span aria-hidden="true">→</span>
+                      </Link>
+                      {pendingRemovalId === map.id ? (
+                        <div className="library-map-removal" role="group" aria-label={`Remove ${map.subject}`}>
+                          <span>remove this map?</span>
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => removeMap(map.id)}
+                              disabled={removingId === map.id}
+                            >
+                              {removingId === map.id ? "removing…" : "remove permanently"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPendingRemovalId(null)}
+                              disabled={removingId === map.id}
+                            >
+                              cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="library-map-remove"
+                          aria-label={`remove ${map.subject}`}
+                          onClick={() => {
+                            setPendingRemovalId(map.id);
+                            setRemoveError(null);
+                          }}
+                        >
+                          remove
+                        </button>
+                      )}
+                      {removeError && pendingRemovalId === map.id && (
+                        <p className="library-map-remove-error" role="alert">{removeError}</p>
+                      )}
+                    </div>
                   </article>
                 );
               })}

@@ -233,7 +233,7 @@ export default function ReviewClient() {
                     <span className="review-parent-topic">From {concept.subject}</span>
                     <strong>{concept.title}</strong>
                   </span>
-                  <span className="review-timeline-action">Review early <span aria-hidden="true">→</span></span>
+                  <span className="review-timeline-action">review early <span aria-hidden="true">→</span></span>
                 </button>
               ))}
             </div>
@@ -263,7 +263,7 @@ export default function ReviewClient() {
                     <span className="review-parent-topic">From {concept.subject}</span>
                     <strong>{concept.title}</strong>
                   </span>
-                  <span className="review-timeline-action">Start recall <span aria-hidden="true">→</span></span>
+                  <span className="review-timeline-action">start recall <span aria-hidden="true">→</span></span>
                 </button>
               ))}
             </div>

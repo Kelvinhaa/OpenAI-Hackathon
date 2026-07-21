@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -126,6 +127,44 @@ def test_generation_error_returns_502_without_storing_a_study(
         "detail": "Learning map generation is temporarily unavailable. Please try again."
     }
     assert db_session.query(StudySession).count() == 0
+
+
+def test_create_study_from_pdf_persists_a_pdf_grounded_map(
+    client, db_session, monkeypatch, generated_learning_experience
+):
+    captured = {}
+
+    def fake_extract_pdf_context(payload: bytes):
+        assert payload == b"%PDF-1.7\nnotes"
+        return SimpleNamespace(text="[page 1]\nMitosis separates chromosomes.")
+
+    async def fake_generate_learning_experience(**kwargs):
+        captured.update(kwargs)
+        return generated_learning_experience
+
+    monkeypatch.setattr(
+        study_router, "extract_pdf_context", fake_extract_pdf_context, raising=False
+    )
+    monkeypatch.setattr(
+        study_router, "generate_learning_experience", fake_generate_learning_experience
+    )
+
+    response = client.post(
+        "/study/from-pdf",
+        data={
+            "subject": "Cell division",
+            "time": "45",
+            "level": "intermediate",
+            "goal": "Prepare for a quiz",
+            "exam_date": "2026-08-01",
+        },
+        files={"document": ("notes.pdf", b"%PDF-1.7\nnotes", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] is not None
+    assert captured["source_context"] == "[page 1]\nMitosis separates chromosomes."
+    assert db_session.query(StudySession).count() == 1
 
 
 def test_persistence_failure_rolls_back_flushed_session_nodes_and_edges(
@@ -291,6 +330,52 @@ def _concept_for_user(db_session, user_id, *, key="mitosis", next_review_at=None
     db_session.add(concept)
     db_session.commit()
     return concept
+
+
+def test_delete_owned_study_removes_its_learning_map(client, db_session):
+    concept = _concept_for_user(db_session, uuid.UUID(TEST_USER_ID))
+    prerequisite = ConceptNode(
+        study_session_id=concept.study_session_id,
+        key="cell-cycle",
+        title="Cell cycle",
+        explanation="The stages before division.",
+        retrieval_prompt="What happens before mitosis?",
+    )
+    db_session.add(prerequisite)
+    db_session.flush()
+    db_session.add(
+        ConceptReviewEvent(
+            concept_node_id=concept.id,
+            rating=3,
+            answer="It produces matching nuclei.",
+        )
+    )
+    db_session.add(
+        ConceptEdge(
+            study_session_id=concept.study_session_id,
+            prerequisite_node_id=prerequisite.id,
+            dependent_node_id=concept.id,
+        )
+    )
+    db_session.commit()
+
+    response = client.delete(f"/study/{concept.study_session_id}")
+
+    db_session.expire_all()
+    assert response.status_code == 204
+    assert db_session.query(StudySession).count() == 0
+    assert db_session.query(ConceptNode).count() == 0
+    assert db_session.query(ConceptEdge).count() == 0
+    assert db_session.query(ConceptReviewEvent).count() == 0
+
+
+def test_delete_study_rejects_another_users_map(client, db_session):
+    concept = _concept_for_user(db_session, uuid.uuid4())
+
+    response = client.delete(f"/study/{concept.study_session_id}")
+
+    assert response.status_code == 404
+    assert db_session.query(StudySession).count() == 1
 
 
 def test_feedback_does_not_change_concept_fsrs_state(client, db_session, monkeypatch):

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TopNav } from "@/app/components/TopNav";
 import { MindMapprMark } from "@/app/components/MindMapprMark";
+import RotatingText from "@/app/components/RotatingText";
 import { Select } from "@/app/components/Select";
 import type { StudyResponse, StudyFormData } from "@/types/study";
 
@@ -26,6 +27,7 @@ type UIState =
 type AuthState = {
   accessToken: string | null;
   isGuestSession: boolean;
+  username: string | null;
 };
 
 // A rejected fetch cannot say *why* it failed: an unreachable server and a
@@ -51,6 +53,19 @@ async function describeFetchFailure(message: string): Promise<string> {
   );
 }
 
+function responseErrorMessage(error: unknown, fallback: string): string {
+  if (typeof error !== "object" || error === null) return fallback;
+
+  const record = error as { detail?: unknown; message?: unknown };
+  if (typeof record.detail === "string") return record.detail;
+  if (Array.isArray(record.detail)) {
+    const firstDetail = record.detail[0] as { msg?: unknown } | undefined;
+    if (typeof firstDetail?.msg === "string") return firstDetail.msg;
+  }
+  if (typeof record.message === "string") return record.message;
+  return fallback;
+}
+
 const retentionTrend = [
   { label: "Day 1", value: 42 },
   { label: "Day 3", value: 51 },
@@ -60,19 +75,34 @@ const retentionTrend = [
 ];
 
 function authStateFromSession(session: Session | null): AuthState {
+  const username = session?.user.user_metadata?.username;
+  const displayName = typeof username === "string" && username.trim()
+    ? username.trim()
+    : session?.user.email ?? null;
+
   return {
     accessToken: session?.access_token ?? null,
     isGuestSession: Boolean(session && (!session.user.email || session.user.is_anonymous)),
+    username: session?.user.is_anonymous ? null : displayName,
   };
 }
 
 export default function Home() {
   const [uiState, setUiState] = useState<UIState>({ status: "idle" });
   const [formError, setFormError] = useState<string>("");
-  const [authState, setAuthState] = useState<AuthState>({ accessToken: null, isGuestSession: false });
+  const [authState, setAuthState] = useState<AuthState>({
+    accessToken: null,
+    isGuestSession: false,
+    username: null,
+  });
   const [isGuestResult, setIsGuestResult] = useState(false);
   const [level, setLevel] = useState("");
-  const { accessToken, isGuestSession } = authState;
+  const [document, setDocument] = useState<File | null>(null);
+  const { accessToken, isGuestSession, username } = authState;
+  const isAuthenticatedUser = Boolean(accessToken && !isGuestSession);
+  const studyPromptQuestion = username
+    ? `What are you studying today, ${username}?`
+    : "What are you studying today?";
 
   useEffect(() => {
     const supabase = createClient();
@@ -99,29 +129,50 @@ export default function Home() {
       setFormError("Please fill in all required fields.");
       return;
     }
+    if (document && !isAuthenticatedUser) {
+      setFormError("Sign in to create a PDF-based plan map.");
+      return;
+    }
 
     const meta: StudyFormData = { subject, time, level, goal, exam_date: examDate };
     setUiState({ status: "loading", meta });
 
     try {
-      const isAuthenticatedUser = Boolean(accessToken && !isGuestSession);
-      const endpoint = isAuthenticatedUser
-        ? `${API_BASE}/study`
-        : `${API_BASE}/study/preview`;
+      const hasPdf = Boolean(document && isAuthenticatedUser);
+      const endpoint = hasPdf
+        ? `${API_BASE}/study/from-pdf`
+        : isAuthenticatedUser
+          ? `${API_BASE}/study`
+          : `${API_BASE}/study/preview`;
+      const body = hasPdf
+        ? (() => {
+            const formData = new FormData();
+            formData.append("subject", subject);
+            formData.append("time", String(time));
+            formData.append("level", level);
+            if (goal) formData.append("goal", goal);
+            if (examDate) formData.append("exam_date", examDate);
+            formData.append("document", document!);
+            return formData;
+          })()
+        : JSON.stringify({
+            time,
+            subject,
+            level,
+            goal: goal || null,
+            exam_date: examDate || null,
+          });
+      const headers = hasPdf
+        ? { Authorization: `Bearer ${accessToken}` }
+        : {
+            "Content-Type": "application/json",
+            ...(isAuthenticatedUser ? { Authorization: `Bearer ${accessToken}` } : {}),
+          };
 
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(isAuthenticatedUser ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
-        body: JSON.stringify({
-          time,
-          subject,
-          level,
-          goal: goal || null,
-          exam_date: examDate || null,
-        }),
+        headers,
+        body,
       });
 
       if (!res.ok) {
@@ -129,7 +180,7 @@ export default function Home() {
         let message = `Server error (${res.status})`;
         if (contentType.includes("application/json")) {
           const err = await res.json().catch(() => ({}));
-          message = err.detail ?? err.message ?? message;
+          message = responseErrorMessage(err, message);
         } else {
           const text = await res.text().catch(() => "");
           if (text) message = text.slice(0, 200);
@@ -139,7 +190,7 @@ export default function Home() {
 
       const data: StudyResponse = await res.json();
       setUiState({ status: "success", data });
-      setIsGuestResult(!accessToken || isGuestSession);
+      setIsGuestResult(!isAuthenticatedUser);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
       setUiState({ status: "error", message });
@@ -166,6 +217,32 @@ export default function Home() {
         <p className="tagline">Discover study techniques tailored to your learning style</p>
       </header>
 
+      <div className="study-subject-rotator" aria-label="Study subject examples">
+        <span className="study-subject-rotator-question">{studyPromptQuestion}</span>
+        <RotatingText
+          texts={[
+            "biology",
+            "calculus",
+            "chemistry",
+            "psychology",
+            "history",
+            "economics",
+            "literature",
+            "physics",
+            "computer science",
+          ]}
+          mainClassName="study-subject-rotator-token"
+          staggerFrom="last"
+          initial={{ y: "100%" }}
+          animate={{ y: 0 }}
+          exit={{ y: "-120%" }}
+          staggerDuration={0.025}
+          splitLevelClassName="study-subject-rotator-word"
+          transition={{ type: "spring", damping: 30, stiffness: 400 }}
+          rotationInterval={2000}
+        />
+      </div>
+
       <div className="compose-layout">
       <main className="main-card paper-texture">
         <h2 className="card-title">Get Personalized Study Recommendations</h2>
@@ -175,7 +252,7 @@ export default function Home() {
 
         <form className="form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="subject">What are you studying?</label>
+            <label htmlFor="subject">Subject topic</label>
             <input
               id="subject"
               name="subject"
@@ -185,6 +262,28 @@ export default function Home() {
             />
             <span className="form-hint">Be specific for better results</span>
           </div>
+
+          {isAuthenticatedUser ? (
+            <div className="form-group pdf-upload-group">
+              <label htmlFor="study-pdf">
+                Lecture notes / PDFs <span className="optional-badge">optional</span>
+              </label>
+              <input
+                id="study-pdf"
+                name="document"
+                className="pdf-upload-input"
+                type="file"
+                accept="application/pdf,.pdf"
+                aria-describedby="study-pdf-hint"
+                onChange={(event) => setDocument(event.target.files?.[0] ?? null)}
+              />
+              <span id="study-pdf-hint" className="form-hint">
+                up to 10 MB
+              </span>
+            </div>
+          ) : (
+            <p className="form-hint pdf-upload-guest">sign in to create a PDF-based plan map</p>
+          )}
 
           <div className="form-row">
             <div className="form-group">

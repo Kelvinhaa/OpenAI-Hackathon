@@ -43,6 +43,22 @@ test.describe("guest retention preview", () => {
     await expect(page.getByRole("heading", { name: "Create Account" })).toBeVisible();
   });
 
+  test("guest planner uses the generic study prompt", async ({ page }) => {
+    await page.goto("/");
+
+    const subjectExamples = page.getByLabel("Study subject examples");
+    await expect(subjectExamples).toContainText("What are you studying today?");
+    await expect(subjectExamples).not.toContainText("What are you studying today,");
+    await expect(subjectExamples).toContainText("calculus", { timeout: 3500 });
+  });
+
+  test("guest planner keeps PDF plan maps behind sign-in", async ({ page }) => {
+    await page.goto("/");
+
+    await expect(page.getByLabel("lecture notes / PDFs")).not.toBeVisible();
+    await expect(page.getByText("sign in to create a PDF-based plan map")).toBeVisible();
+  });
+
   test("guest dashboard presents the illustrative retention trend", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByText("How memory fades", { exact: true })).toBeVisible();

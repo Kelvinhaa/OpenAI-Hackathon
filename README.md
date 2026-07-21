@@ -6,11 +6,14 @@ concept in their own words, receive concise formative feedback, choose their
 own recall rating, and return when that concept is due for review. The logic behind is based on **FSRS** (Free Spaced Repetition Scheduler). It is a modern algorithm for spaced repetition technique that dramatically improves flashcard study efficiency.
 
 Live Webpage: https://open-ai-hackathon-rho.vercel.app/
+-> Since sign up and sign in currently does not require real email auth, feel free to use a dumb email and password when sign up!
 
 ## What it does
 
 - Based on the provided information about learning goal, subjects, exam dates and level of difficulty, it generates a subject-specific study plan with timed techniques and tips.
 - Creates a 4–6 concept learning map with prerequisite relationships.
+- Lets signed-in learners ground a plan and prerequisite map in a text-based
+  PDF as well as their topic, level, available time, goal, and exam date.
 - Provides retrieval-practice feedback before the learner records a rating.
 - Schedules concept-level reviews with FSRS-inspired stability and difficulty
   state.
@@ -113,6 +116,14 @@ alembic upgrade head
 | `E2E_EMAIL` / `E2E_PASSWORD` | Playwright | Local test account for authenticated browser tests. |
 | `PLAYWRIGHT_BASE_URL` | Playwright | Optional frontend URL; defaults to `http://127.0.0.1:3004`. |
 
+## PDF study maps
+
+PDF study maps are available to signed-in learners. Upload a text-based,
+unlocked PDF up to 10 MB and 50 pages, then provide the normal planner inputs.
+MindMappr processes the document temporarily to ground the generated plan and
+map, then discards the upload. Scanned PDFs, OCR, persistent document storage,
+and guest PDF previews are not supported in this release.
+
 ## Demo path
 
 1. Open the home page and enter **Cell division**, **45 minutes**,
@@ -153,7 +164,9 @@ npm run test:e2e
 ## Built with Codex and GPT-5.6
 
 Codex accelerated the frontend, FastAPI routes, database migration, automated
-tests, and project documentation. GPT-5.6 Luna is used through the OpenAI
+tests, and project documentation. Codex features of adding comments in changes and scheduled task helped me structure my plan easily.
+
+GPT-5.6 Terra with high effort is used to plan all features and architecture of the project. GPT-5.6 Luna is used through the OpenAI
 Responses API and structured Pydantic outputs to
 create the study plan and learning map, and to provide bounded formative
 feedback on retrieval-practice answers.
@@ -161,6 +174,10 @@ feedback on retrieval-practice answers.
 The learner remains in control of the rating: the model can suggest a rating,
 but only the learner's selected `Again`, `Hard`, `Good`, or `Easy` rating updates
 the review schedule.
+
+**Guest-first demo:** Visitors can explore planning and retention feedback before creating an account, while saved maps and review history require sign-in.
+
+**Security Audit** Gpt 5.6 Terra with security plug in examine the codebase and advise to improve security by adding rate limiting and prevent prompt injection.
 
 ## Icon credits
 

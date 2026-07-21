@@ -13,7 +13,7 @@ test("authenticate the local Supabase test user", async ({ page }) => {
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign In" }).click();
   await page.waitForURL("/");
-  await expect(page.getByLabel("What are you studying?")).toBeVisible();
+  await expect(page.getByLabel("subject topic")).toBeVisible();
 
   await page.context().storageState({ path: "playwright/.auth/user.json" });
 });

@@ -13,3 +13,5 @@ cryptography
 pytest
 pytest-asyncio
 httpx
+pypdf==6.14.2
+python-multipart==0.0.32
